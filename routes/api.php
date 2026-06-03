@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\CostController;
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\DeliveryOrderController;
 use App\Http\Controllers\Api\DeviceController;
+use App\Http\Controllers\Api\InvoiceController;
 use App\Http\Controllers\Api\MasterDataController;
 use App\Http\Controllers\Api\ReportController;
 use App\Http\Controllers\Api\SalesController;
@@ -92,9 +93,17 @@ Route::group([], function () {
         // Scanner
         Route::post('scan', [ScanController::class, 'scan']);
 
+        // Invoices
+        Route::get('invoices', [InvoiceController::class, 'index']);
+        Route::post('invoices', [InvoiceController::class, 'store']);
+        Route::get('invoices/{invoice}', [InvoiceController::class, 'show']);
+        Route::put('invoices/{invoice}', [InvoiceController::class, 'update']);
+        Route::delete('invoices/{invoice}', [InvoiceController::class, 'destroy']);
+        Route::post('invoices/{invoice}/pay', [InvoiceController::class, 'pay']);
+        Route::post('invoices/{invoice}/issue', [InvoiceController::class, 'issue']);
+
         // Device Tokens
         Route::post('device/token', [DeviceController::class, 'registerToken']);
         Route::post('device/revoke', [DeviceController::class, 'revokeToken']);
-
     });
 });

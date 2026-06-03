@@ -12,18 +12,23 @@ class Vehicle extends Model
     use HasFactory;
 
     protected $fillable = [
-        'branch_id', 'plate_number', 'type',
-        'driver_name', 'driver_phone',
-        'capacity_kg', 'status', 'notes',
+        'expedition_id',
+        'plate_number',
+        'type',
+        'driver_name',
+        'driver_phone',
+        'capacity_kg',
+        'status',
+        'notes',
     ];
 
     protected $casts = [
         'capacity_kg' => 'decimal:2',
     ];
 
-    public function branch(): BelongsTo
+    public function expedition(): BelongsTo
     {
-        return $this->belongsTo(Branch::class);
+        return $this->belongsTo(Expedition::class);
     }
 
     public function deliveryOrders(): HasMany

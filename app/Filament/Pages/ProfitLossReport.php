@@ -4,6 +4,7 @@ namespace App\Filament\Pages;
 
 use App\Models\Branch;
 use App\Models\DailySale;
+use App\Models\LpgPrice;
 use App\Models\OperationalCost;
 use Filament\Pages\Page;
 
@@ -32,7 +33,7 @@ class ProfitLossReport extends Page
                 ->label('Export CSV')
                 ->icon('heroicon-o-arrow-down-tray')
                 ->color('gray')
-                ->url(fn () => route('export.pl', array_filter([
+                ->url(fn() => route('export.pl', array_filter([
                     'branch_id'  => $this->branch_id,
                     'start_date' => $this->start_date,
                     'end_date'   => $this->end_date,
@@ -76,13 +77,13 @@ class ProfitLossReport extends Page
 
         $revenueQuery = DailySale::query()
             ->whereBetween('sale_date', [$startDate, $endDate])
-            ->when($branchId, fn ($q) => $q->where('branch_id', $branchId));
+            ->when($branchId, fn($q) => $q->where('branch_id', $branchId));
 
         $totalRevenue = (float) $revenueQuery->sum('total_revenue');
 
         $revenueByType = DailySale::query()
             ->whereBetween('sale_date', [$startDate, $endDate])
-            ->when($branchId, fn ($q) => $q->where('branch_id', $branchId))
+            ->when($branchId, fn($q) => $q->where('branch_id', $branchId))
             ->selectRaw('cylinder_type, SUM(total_revenue) as total, SUM(quantity) as qty')
             ->groupBy('cylinder_type')
             ->get()
@@ -90,13 +91,49 @@ class ProfitLossReport extends Page
 
         $costsByCategory = OperationalCost::query()
             ->whereBetween('cost_date', [$startDate, $endDate])
-            ->when($branchId, fn ($q) => $q->where('branch_id', $branchId))
+            ->when($branchId, fn($q) => $q->where('branch_id', $branchId))
             ->selectRaw('cost_category, SUM(amount) as total')
             ->groupBy('cost_category')
             ->pluck('total', 'cost_category');
 
+        // Calculate weighted-average HPP (COGS) for each cylinder type sold
+        $totalHpp = 0.0;
+        $hppDetails = [];
+        foreach ($revenueByType as $type => $data) {
+            $qtySold = (int) $data->qty;
+            if ($qtySold <= 0) continue;
+
+            // Get weighted average purchase_price within the report period
+            $avgHpp = LpgPrice::where('cylinder_type', $type)
+                ->when($branchId, fn($q) => $q->where('branch_id', $branchId)->orWhereNull('branch_id'))
+                ->where('effective_date', '<=', $endDate)
+                ->orderBy('effective_date', 'desc')
+                ->limit(1)
+                ->value('purchase_price');
+
+            // If no branch-specific price found, try global
+            if (! $avgHpp && $branchId) {
+                $avgHpp = LpgPrice::where('cylinder_type', $type)
+                    ->whereNull('branch_id')
+                    ->where('effective_date', '<=', $endDate)
+                    ->orderBy('effective_date', 'desc')
+                    ->limit(1)
+                    ->value('purchase_price');
+            }
+
+            $avgHpp = (float) ($avgHpp ?? 0);
+            $totalHpp += $avgHpp * $qtySold;
+            $hppDetails[$type] = [
+                'qty'         => $qtySold,
+                'avg_hpp'     => $avgHpp,
+                'total_hpp'   => $avgHpp * $qtySold,
+                'total_rev'   => (float) $data->total,
+            ];
+        }
+
         $totalCosts  = (float) $costsByCategory->sum();
-        $grossProfit = $totalRevenue - $totalCosts;
+        $totalExpenses = $totalHpp + $totalCosts;
+        $grossProfit = $totalRevenue - $totalExpenses;
         $margin      = $totalRevenue > 0 ? round(($grossProfit / $totalRevenue) * 100, 1) : 0;
 
         $categoryLabels = [
@@ -110,9 +147,12 @@ class ProfitLossReport extends Page
         return [
             'total_revenue'     => $totalRevenue,
             'revenue_by_type'   => $revenueByType,
+            'hpp_details'       => $hppDetails,
+            'total_hpp'         => $totalHpp,
             'costs_by_category' => $costsByCategory,
             'category_labels'   => $categoryLabels,
-            'total_costs'       => $totalCosts,
+            'total_cost_ops'    => $totalCosts,
+            'total_expenses'    => $totalExpenses,
             'gross_profit'      => $grossProfit,
             'margin'            => $margin,
             'start_date'        => $startDate,

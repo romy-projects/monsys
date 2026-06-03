@@ -3,7 +3,7 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\VehicleResource\Pages;
-use App\Models\Branch;
+use App\Models\Expedition;
 use App\Models\Vehicle;
 use Filament\Forms;
 use Filament\Forms\Form;
@@ -36,20 +36,15 @@ class VehicleResource extends Resource
 
     public static function form(Form $form): Form
     {
-        $isPusat = auth()->user()?->isOwnerPusat() || auth()->user()?->isRegionalLeader();
-
         return $form->schema([
             Forms\Components\Section::make('Vehicle')
                 ->schema([
-                    Forms\Components\Select::make('branch_id')
-                        ->label('Assigned Branch')
-                        ->options(Branch::active()->orderBy('name')->pluck('name', 'id'))
+                    Forms\Components\Select::make('expedition_id')
+                        ->label('Transportir / Expedition')
+                        ->options(Expedition::where('status', 'active')->orderBy('name')->pluck('name', 'id'))
                         ->searchable()
                         ->nullable()
-                        ->default(fn () => auth()->user()->branch_id)
-                        ->disabled(! $isPusat)
-                        ->dehydrated()
-                        ->helperText('Leave blank for fleet shared across branches'),
+                        ->helperText('Select the expedition/transportir this vehicle belongs to'),
 
                     Forms\Components\TextInput::make('plate_number')
                         ->label('Plate Number')
@@ -109,19 +104,19 @@ class VehicleResource extends Resource
                     ->searchable()
                     ->weight(\Filament\Support\Enums\FontWeight::SemiBold),
 
-                Tables\Columns\TextColumn::make('branch.name')
-                    ->label('Branch')
-                    ->placeholder('Shared')
+                Tables\Columns\TextColumn::make('expedition.name')
+                    ->label('Transportir')
+                    ->placeholder('—')
                     ->searchable(),
 
                 Tables\Columns\TextColumn::make('type')
                     ->badge()
-                    ->color(fn ($state) => match ($state) {
+                    ->color(fn($state) => match ($state) {
                         'truck'  => 'primary',
                         'pickup' => 'info',
                         default  => 'gray',
                     })
-                    ->formatStateUsing(fn ($state) => ucfirst($state)),
+                    ->formatStateUsing(fn($state) => ucfirst($state)),
 
                 Tables\Columns\TextColumn::make('driver_name')
                     ->label('Driver')
@@ -133,14 +128,14 @@ class VehicleResource extends Resource
 
                 Tables\Columns\TextColumn::make('capacity_kg')
                     ->label('Capacity')
-                    ->formatStateUsing(fn ($state) => $state ? number_format((float) $state, 0) . ' kg' : '—')
+                    ->formatStateUsing(fn($state) => $state ? number_format((float) $state, 0) . ' kg' : '—')
                     ->alignRight()
                     ->toggleable(),
 
                 Tables\Columns\TextColumn::make('status')
                     ->badge()
-                    ->color(fn ($state) => $state === 'active' ? 'success' : 'gray')
-                    ->formatStateUsing(fn ($state) => ucfirst($state)),
+                    ->color(fn($state) => $state === 'active' ? 'success' : 'gray')
+                    ->formatStateUsing(fn($state) => ucfirst($state)),
             ])
             ->defaultSort('plate_number')
             ->filters([
@@ -155,10 +150,10 @@ class VehicleResource extends Resource
                 Tables\Filters\SelectFilter::make('status')
                     ->options(['active' => 'Active', 'inactive' => 'Inactive']),
 
-                Tables\Filters\SelectFilter::make('branch_id')
-                    ->label('Branch')
-                    ->options(Branch::active()->orderBy('name')->pluck('name', 'id'))
-                    ->visible(fn () => auth()->user()?->isOwnerPusat() || auth()->user()?->isRegionalLeader()),
+                Tables\Filters\SelectFilter::make('expedition_id')
+                    ->label('Transportir')
+                    ->options(Expedition::where('status', 'active')->orderBy('name')->pluck('name', 'id'))
+                    ->visible(fn() => auth()->user()?->isOwnerPusat() || auth()->user()?->isRegionalLeader()),
             ])
             ->actions([
                 Tables\Actions\EditAction::make(),
@@ -173,9 +168,10 @@ class VehicleResource extends Resource
                 $user = auth()->user();
 
                 if (! $user->isOwnerPusat() && ! $user->isRegionalLeader()) {
-                    $query->where(fn ($q) =>
-                        $q->where('branch_id', $user->branch_id)
-                          ->orWhereNull('branch_id')
+                    $query->whereHas(
+                        'expedition',
+                        fn($q) =>
+                        $q->where('status', 'active')
                     );
                 }
             });

@@ -17,6 +17,7 @@ class DeliveryOrderObserver
         match ($do->status) {
             'pending_approval' => $this->notifyPendingApproval($do),
             'approved'         => $this->notifyApproved($do),
+            'on_transportir'   => $this->notifyOnTransportir($do),
             'delivered'        => $this->notifyDelivered($do),
             default            => null,
         };
@@ -55,6 +56,25 @@ class DeliveryOrderObserver
             ->title('✅ DO Approved')
             ->body("DO #{$do->do_number} has been approved and is ready for dispatch.")
             ->success()
+            ->sendToDatabase($recipients);
+    }
+
+    private function notifyOnTransportir(DeliveryOrder $do): void
+    {
+        // Notify destination branch that shipment is with transportir
+        $recipients = User::where('branch_id', $do->destination_branch_id)
+            ->whereIn('role', ['owner_cabang', 'staff_gudang'])
+            ->where('status', 'active')
+            ->get();
+
+        if ($recipients->isEmpty()) {
+            return;
+        }
+
+        Notification::make()
+            ->title('🚛 DO On Transportir')
+            ->body("DO #{$do->do_number} is now with the transportir. ETA: " . ($do->eta?->format('d M Y') ?? 'N/A') . ".")
+            ->warning()
             ->sendToDatabase($recipients);
     }
 

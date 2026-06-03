@@ -3,6 +3,7 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\LpgPriceResource\Pages;
+use App\Models\Branch;
 use App\Models\LpgPrice;
 use Filament\Forms;
 use Filament\Forms\Form;
@@ -32,10 +33,21 @@ class LpgPriceResource extends Resource
 
     public static function form(Form $form): Form
     {
+        $isPusat = auth()->user()?->isOwnerPusat();
+
         return $form->schema([
             Forms\Components\Section::make('Price Configuration')
                 ->description('Set purchase (HPP) and selling price for each cylinder type')
                 ->schema([
+                    Forms\Components\Select::make('branch_id')
+                        ->label('Branch (Optional)')
+                        ->options(Branch::active()->orderBy('name')->pluck('name', 'id'))
+                        ->searchable()
+                        ->nullable()
+                        ->visible(fn() => $isPusat)
+                        ->helperText('Leave empty for global price. Select a branch for branch-specific override.')
+                        ->columnSpan(1),
+
                     Forms\Components\Select::make('cylinder_type')
                         ->label('Cylinder Type / Jenis Tabung')
                         ->options([
@@ -78,6 +90,12 @@ class LpgPriceResource extends Resource
     {
         return $table
             ->columns([
+                Tables\Columns\TextColumn::make('branch.name')
+                    ->label('Branch')
+                    ->placeholder('Global')
+                    ->searchable()
+                    ->toggleable(),
+
                 Tables\Columns\TextColumn::make('cylinder_type')
                     ->label('Type')
                     ->badge()
@@ -86,19 +104,20 @@ class LpgPriceResource extends Resource
 
                 Tables\Columns\TextColumn::make('purchase_price')
                     ->label('Purchase Price (HPP)')
-                    ->formatStateUsing(fn ($state) => 'Rp ' . number_format($state, 0, ',', '.'))
+                    ->formatStateUsing(fn($state) => 'Rp ' . number_format($state, 0, ',', '.'))
                     ->color('danger'),
 
                 Tables\Columns\TextColumn::make('selling_price')
                     ->label('Selling Price')
-                    ->formatStateUsing(fn ($state) => 'Rp ' . number_format($state, 0, ',', '.'))
+                    ->formatStateUsing(fn($state) => 'Rp ' . number_format($state, 0, ',', '.'))
                     ->color('success'),
 
                 Tables\Columns\TextColumn::make('margin')
                     ->label('Margin')
-                    ->getStateUsing(fn (LpgPrice $record): string => $record->purchase_price > 0
-                        ? round((($record->selling_price - $record->purchase_price) / $record->selling_price) * 100, 1) . '%'
-                        : '—'
+                    ->getStateUsing(
+                        fn(LpgPrice $record): string => $record->purchase_price > 0
+                            ? round((($record->selling_price - $record->purchase_price) / $record->selling_price) * 100, 1) . '%'
+                            : '—'
                     )
                     ->badge()
                     ->color('primary'),
@@ -120,7 +139,22 @@ class LpgPriceResource extends Resource
                         '12kg'  => '12 kg',
                         '50kg'  => '50 kg',
                     ]),
+
+                Tables\Filters\SelectFilter::make('branch_id')
+                    ->label('Branch')
+                    ->options(Branch::active()->orderBy('name')->pluck('name', 'id'))
+                    ->visible(fn() => auth()->user()?->isOwnerPusat()),
             ])
+            ->modifyQueryUsing(function ($query) {
+                $user = auth()->user();
+                if (! $user->isOwnerPusat() && ! $user->isRegionalLeader()) {
+                    $query->where(
+                        fn($q) =>
+                        $q->where('branch_id', $user->branch_id)
+                            ->orWhereNull('branch_id')
+                    );
+                }
+            })
             ->actions([
                 Tables\Actions\EditAction::make(),
                 Tables\Actions\DeleteAction::make(),

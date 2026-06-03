@@ -12,12 +12,26 @@ class DeliveryOrder extends Model
     use HasFactory, SoftDeletes;
 
     protected $fillable = [
-        'do_number', 'order_type', 'supplier_name',
-        'origin_branch_id', 'destination_branch_id',
-        'expedition_id', 'vehicle_id', 'cylinder_type', 'quantity_ordered',
-        'quantity_received', 'container_number', 'order_date',
-        'eta', 'received_date', 'status', 'notes',
-        'requested_by', 'approved_by', 'approved_at',
+        'do_number',
+        'order_type',
+        'supplier_name',
+        'origin_branch_id',
+        'destination_branch_id',
+        'expedition_id',
+        'vehicle_id',
+        'cylinder_type',
+        'quantity_ordered',
+        'quantity_received',
+        'container_number',
+        'order_date',
+        'eta',
+        'received_date',
+        'status',
+        'notes',
+        'receipt_path',
+        'requested_by',
+        'approved_by',
+        'approved_at',
     ];
 
     protected $casts = [

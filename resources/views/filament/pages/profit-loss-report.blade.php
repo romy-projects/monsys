@@ -118,7 +118,7 @@
                     @endforelse
                     <div class="flex items-center justify-between bg-red-50 px-6 py-4 dark:bg-red-900/20">
                         <span class="font-semibold text-gray-900 dark:text-white">Total Costs</span>
-                        <span class="text-lg font-bold text-red-600 dark:text-red-400">{{ $fmt($data['total_costs']) }}</span>
+                        <span class="text-lg font-bold text-red-600 dark:text-red-400">{{ $fmt($data['total_cost_ops']) }}</span>
                     </div>
                 </div>
             </div>
@@ -137,7 +137,7 @@
                 </div>
                 <div>
                     <p class="text-xs text-gray-500 dark:text-gray-400">Total Costs</p>
-                    <p class="text-xl font-bold text-red-600 dark:text-red-400">{{ $fmt($data['total_costs']) }}</p>
+                    <p class="text-xl font-bold text-red-600 dark:text-red-400">{{ $fmt($data['total_cost_ops']) }}</p>
                 </div>
                 <div>
                     <p class="text-xs text-gray-500 dark:text-gray-400">

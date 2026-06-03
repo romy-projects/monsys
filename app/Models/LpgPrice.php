@@ -11,6 +11,7 @@ class LpgPrice extends Model
     use HasFactory;
 
     protected $fillable = [
+        'branch_id',
         'cylinder_type',
         'purchase_price',
         'selling_price',
@@ -24,14 +25,38 @@ class LpgPrice extends Model
         'selling_price'  => 'decimal:2',
     ];
 
+    public function branch(): BelongsTo
+    {
+        return $this->belongsTo(Branch::class);
+    }
+
     public function createdBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
     }
 
-    public static function currentPrice(string $cylinderType): ?self
+    /**
+     * Get the current price for a cylinder type, optionally for a specific branch.
+     * Branch-specific prices override global (null branch_id) prices.
+     */
+    public static function currentPrice(string $cylinderType, ?int $branchId = null): ?self
     {
+        // Try branch-specific price first
+        if ($branchId) {
+            $branchPrice = static::where('cylinder_type', $cylinderType)
+                ->where('branch_id', $branchId)
+                ->where('effective_date', '<=', today())
+                ->latest('effective_date')
+                ->first();
+
+            if ($branchPrice) {
+                return $branchPrice;
+            }
+        }
+
+        // Fallback to global price
         return static::where('cylinder_type', $cylinderType)
+            ->whereNull('branch_id')
             ->where('effective_date', '<=', today())
             ->latest('effective_date')
             ->first();

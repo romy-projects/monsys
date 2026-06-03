@@ -3,7 +3,7 @@
 namespace App\Filament\Pages;
 
 use App\Models\Branch;
-use App\Models\Receivable;
+use App\Models\Invoice;
 use Filament\Pages\Page;
 
 class ReceivablesAging extends Page
@@ -44,9 +44,9 @@ class ReceivablesAging extends Page
         $user  = auth()->user();
         $today = today();
 
-        $query = Receivable::query()
+        $query = Invoice::query()
             ->whereNotIn('status', ['paid'])
-            ->with('branch');
+            ->with(['branch', 'customer']);
 
         if ($this->branch_id) {
             $query->where('branch_id', $this->branch_id);
@@ -64,8 +64,8 @@ class ReceivablesAging extends Page
 
         $grandTotal = 0.0;
 
-        $query->get()->each(function (Receivable $r) use (&$buckets, &$grandTotal, $today) {
-            $balance = max(0.0, (float) $r->amount - (float) $r->paid_amount);
+        $query->get()->each(function (Invoice $r) use (&$buckets, &$grandTotal, $today) {
+            $balance = max(0.0, (float) $r->total_amount - (float) $r->paid_amount);
 
             if ($balance <= 0) {
                 return;
@@ -89,12 +89,12 @@ class ReceivablesAging extends Page
             $buckets[$key]['items']->push([
                 'id'             => $r->id,
                 'branch'         => $r->branch,
-                'buyer_name'     => $r->buyer_name,
-                'buyer_type'     => $r->buyer_type,
+                'buyer_name'     => $r->customer?->name ?? $r->branch?->name,
+                'buyer_type'     => $r->customer?->type ?? '—',
                 'invoice_number' => $r->invoice_number,
-                'invoice_date'   => $r->invoice_date,
+                'invoice_date'   => $r->issue_date,
                 'due_date'       => $r->due_date,
-                'amount'         => (float) $r->amount,
+                'amount'         => (float) $r->total_amount,
                 'paid_amount'    => (float) $r->paid_amount,
                 'balance'        => $balance,
                 'days_overdue'   => $r->due_date->lt($today) ? $today->diffInDays($r->due_date) : 0,

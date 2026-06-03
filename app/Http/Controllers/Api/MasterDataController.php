@@ -31,7 +31,7 @@ class MasterDataController extends Controller
         $user     = $request->user();
         $branches = Branch::when(
             ! $user->isOwnerPusat() && ! $user->isRegionalLeader(),
-            fn ($q) => $q->where('id', $user->branch_id)
+            fn($q) => $q->where('id', $user->branch_id)
         )->where('status', 'active')->orderBy('name')->get();
 
         return $this->success(BranchResource::collection($branches));
@@ -121,15 +121,23 @@ class MasterDataController extends Controller
 
     public function prices(Request $request): JsonResponse
     {
-        $prices = LpgPrice::orderBy('cylinder_type')->orderByDesc('effective_date')->get();
-        return $this->success(LpgPriceResource::collection($prices));
+        $query = LpgPrice::with('branch')->orderBy('cylinder_type')->orderByDesc('effective_date');
+
+        if ($request->filled('branch_id')) {
+            $query->where('branch_id', $request->branch_id);
+        } elseif (! $request->user()->isOwnerPusat() && ! $request->user()->isRegionalLeader()) {
+            $query->where(fn($q) => $q->where('branch_id', $request->user()->branch_id)->orWhereNull('branch_id'));
+        }
+
+        return $this->success(LpgPriceResource::collection($query->get()));
     }
 
-    public function currentPrices(): JsonResponse
+    public function currentPrices(Request $request): JsonResponse
     {
-        $types  = ['3kg', '5.5kg', '12kg', '50kg'];
-        $prices = collect($types)->mapWithKeys(fn ($type) => [
-            $type => ($p = LpgPrice::currentPrice($type))
+        $branchId = $request->filled('branch_id') ? (int) $request->branch_id : null;
+        $types    = ['3kg', '5.5kg', '12kg', '50kg'];
+        $prices   = collect($types)->mapWithKeys(fn($type) => [
+            $type => ($p = LpgPrice::currentPrice($type, $branchId))
                 ? ['purchase_price' => (float) $p->purchase_price, 'selling_price' => (float) $p->selling_price]
                 : null,
         ]);
@@ -147,6 +155,7 @@ class MasterDataController extends Controller
             'purchase_price' => ['required', 'numeric', 'min:0'],
             'selling_price'  => ['required', 'numeric', 'min:0'],
             'effective_date' => ['required', 'date'],
+            'branch_id'      => ['nullable', 'exists:branches,id'],
         ]);
 
         $data['created_by'] = $user->id;
@@ -174,15 +183,12 @@ class MasterDataController extends Controller
     public function vehicles(Request $request): JsonResponse
     {
         $user  = $request->user();
-        $query = Vehicle::active()->with('branch')->orderBy('plate_number');
+        $query = Vehicle::active()->with('expedition')->orderBy('plate_number');
 
         if (! $user->isOwnerPusat() && ! $user->isRegionalLeader()) {
-            $query->where(fn ($q) => $q
-                ->where('branch_id', $user->branch_id)
-                ->orWhereNull('branch_id')
-            );
-        } elseif ($request->filled('branch_id')) {
-            $query->where('branch_id', $request->branch_id);
+            $query->whereHas('expedition', fn($q) => $q->where('status', 'active'));
+        } elseif ($request->filled('expedition_id')) {
+            $query->where('expedition_id', $request->expedition_id);
         }
 
         return $this->success(VehicleResource::collection($query->get()));

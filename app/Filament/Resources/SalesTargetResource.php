@@ -37,13 +37,22 @@ class SalesTargetResource extends Resource
     public static function form(Form $form): Form
     {
         $months = [
-            1 => 'January', 2 => 'February', 3 => 'March',    4 => 'April',
-            5 => 'May',      6 => 'June',     7 => 'July',     8 => 'August',
-            9 => 'September',10 => 'October',11 => 'November',12 => 'December',
+            1 => 'January',
+            2 => 'February',
+            3 => 'March',
+            4 => 'April',
+            5 => 'May',
+            6 => 'June',
+            7 => 'July',
+            8 => 'August',
+            9 => 'September',
+            10 => 'October',
+            11 => 'November',
+            12 => 'December',
         ];
 
         $years = collect(range(now()->year - 1, now()->year + 2))
-            ->mapWithKeys(fn ($y) => [$y => (string) $y])
+            ->mapWithKeys(fn($y) => [$y => (string) $y])
             ->all();
 
         return $form->schema([
@@ -94,9 +103,18 @@ class SalesTargetResource extends Resource
     public static function table(Table $table): Table
     {
         $months = [
-            1 => 'Jan', 2 => 'Feb', 3 => 'Mar', 4 => 'Apr',
-            5 => 'May', 6 => 'Jun', 7 => 'Jul', 8 => 'Aug',
-            9 => 'Sep', 10 => 'Oct', 11 => 'Nov', 12 => 'Dec',
+            1 => 'Jan',
+            2 => 'Feb',
+            3 => 'Mar',
+            4 => 'Apr',
+            5 => 'May',
+            6 => 'Jun',
+            7 => 'Jul',
+            8 => 'Aug',
+            9 => 'Sep',
+            10 => 'Oct',
+            11 => 'Nov',
+            12 => 'Dec',
         ];
 
         return $table
@@ -111,7 +129,7 @@ class SalesTargetResource extends Resource
                     ->sortable(),
 
                 Tables\Columns\TextColumn::make('month')
-                    ->formatStateUsing(fn ($state) => $months[$state] ?? $state)
+                    ->formatStateUsing(fn($state) => $months[$state] ?? $state)
                     ->sortable(),
 
                 Tables\Columns\TextColumn::make('cylinder_type')
@@ -126,7 +144,7 @@ class SalesTargetResource extends Resource
 
                 Tables\Columns\TextColumn::make('target_revenue')
                     ->label('Target Revenue')
-                    ->formatStateUsing(fn ($state) => 'Rp ' . number_format($state, 0, ',', '.'))
+                    ->formatStateUsing(fn($state) => 'Rp ' . number_format($state, 0, ',', '.'))
                     ->sortable(),
             ])
             ->defaultSort('year', 'desc')
@@ -172,7 +190,7 @@ class SalesTargetResource extends Resource
 
     public static function canAccess(): bool
     {
-        return auth()->check();
+        return auth()->user()?->isOwnerPusat() ?? false;
     }
 
     public static function canCreate(): bool

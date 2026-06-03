@@ -46,7 +46,7 @@ class ReceivableResource extends Resource
                         ->options(Branch::active()->orderBy('name')->pluck('name', 'id'))
                         ->searchable()
                         ->required()
-                        ->default(fn () => auth()->user()->branch_id)
+                        ->default(fn() => auth()->user()->branch_id)
                         ->disabled(! $isPusat)
                         ->dehydrated()
                         ->columnSpan(2),
@@ -97,7 +97,7 @@ class ReceivableResource extends Resource
 
     public static function table(Table $table): Table
     {
-        $fmt = fn ($n) => 'Rp ' . number_format((float) $n, 0, ',', '.');
+        $fmt = fn($n) => 'Rp ' . number_format((float) $n, 0, ',', '.');
 
         return $table
             ->columns([
@@ -115,12 +115,12 @@ class ReceivableResource extends Resource
                 Tables\Columns\TextColumn::make('buyer_type')
                     ->label('Type')
                     ->badge()
-                    ->color(fn ($state) => match ($state) {
+                    ->color(fn($state) => match ($state) {
                         'agen'     => 'primary',
                         'industri' => 'warning',
                         default    => 'gray',
                     })
-                    ->formatStateUsing(fn ($state) => ucfirst($state)),
+                    ->formatStateUsing(fn($state) => ucfirst($state)),
 
                 Tables\Columns\TextColumn::make('invoice_number')
                     ->label('Invoice #')
@@ -139,26 +139,26 @@ class ReceivableResource extends Resource
 
                 Tables\Columns\TextColumn::make('balance')
                     ->label('Balance')
-                    ->getStateUsing(fn ($record) => max(0, (float) $record->amount - (float) $record->paid_amount))
+                    ->getStateUsing(fn($record) => max(0, (float) $record->amount - (float) $record->paid_amount))
                     ->formatStateUsing($fmt)
-                    ->color(fn ($state) => $state > 0 ? 'danger' : 'success'),
+                    ->color(fn($state) => $state > 0 ? 'danger' : 'success'),
 
                 Tables\Columns\TextColumn::make('due_date')
                     ->label('Due Date')
                     ->date('d M Y')
                     ->sortable()
-                    ->color(fn ($state, $record) => $state?->lt(today()) && $record->status !== 'paid' ? 'danger' : null),
+                    ->color(fn($state, $record) => $state?->lt(today()) && $record->status !== 'paid' ? 'danger' : null),
 
                 Tables\Columns\TextColumn::make('status')
                     ->badge()
-                    ->color(fn (string $state): string => match ($state) {
+                    ->color(fn(string $state): string => match ($state) {
                         'outstanding' => 'warning',
                         'partial'     => 'info',
                         'paid'        => 'success',
                         'overdue'     => 'danger',
                         default       => 'gray',
                     })
-                    ->formatStateUsing(fn ($state) => ucfirst($state)),
+                    ->formatStateUsing(fn($state) => ucfirst($state)),
             ])
             ->defaultSort('due_date', 'asc')
             ->filters([
@@ -180,14 +180,14 @@ class ReceivableResource extends Resource
                 Tables\Filters\SelectFilter::make('branch_id')
                     ->label('Branch')
                     ->options(Branch::active()->orderBy('name')->pluck('name', 'id'))
-                    ->visible(fn () => auth()->user()?->isOwnerPusat() || auth()->user()?->isRegionalLeader()),
+                    ->visible(fn() => auth()->user()?->isOwnerPusat() || auth()->user()?->isRegionalLeader()),
             ])
             ->actions([
                 Tables\Actions\Action::make('record_payment')
                     ->label('Record Payment')
                     ->icon('heroicon-o-banknotes')
                     ->color('success')
-                    ->visible(fn (Receivable $record) => $record->status !== 'paid')
+                    ->visible(fn(Receivable $record) => $record->status !== 'paid')
                     ->form([
                         Forms\Components\TextInput::make('payment_amount')
                             ->label('Payment Amount (Rp)')
@@ -216,7 +216,7 @@ class ReceivableResource extends Resource
                     ->modalHeading('Record Payment'),
 
                 Tables\Actions\EditAction::make()
-                    ->visible(fn (Receivable $record) => $record->status !== 'paid'),
+                    ->visible(fn(Receivable $record) => $record->status !== 'paid'),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
@@ -248,7 +248,8 @@ class ReceivableResource extends Resource
 
     public static function canAccess(): bool
     {
-        return auth()->user()?->canViewFinance() ?? false;
+        // Hidden — replaced by Invoicing module
+        return false;
     }
 
     public static function canDelete(Model $record): bool

@@ -67,7 +67,7 @@ class BranchRanking extends Page
         $targetQuery = SalesTarget::query()
             ->where(function ($q) use ($yearMonths) {
                 foreach ($yearMonths as $ym) {
-                    $q->orWhere(fn ($q2) => $q2->where('year', $ym['year'])->where('month', $ym['month']));
+                    $q->orWhere(fn($q2) => $q2->where('year', $ym['year'])->where('month', $ym['month']));
                 }
             })
             ->selectRaw('branch_id, SUM(target_revenue) as target_revenue')
@@ -100,6 +100,6 @@ class BranchRanking extends Page
 
     public static function canAccess(): bool
     {
-        return auth()->check();
+        return auth()->user()?->isOwnerPusat() ?? false;
     }
 }
