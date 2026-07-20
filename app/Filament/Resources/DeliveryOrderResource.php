@@ -39,24 +39,14 @@ class DeliveryOrderResource extends Resource
 
     public static function form(Form $form): Form
     {
-        $user = auth()->user();
+        $user   = auth()->user();
         $isPusat = $user->isOwnerPusat() || $user->isRegionalLeader();
+        $mainBranch = Branch::mainBranch()->first();
 
         return $form->schema([
             Forms\Components\Section::make('DO Details')
                 ->description('Basic delivery order information')
                 ->schema([
-                    Forms\Components\Select::make('order_type')
-                        ->label('Order Type')
-                        ->options([
-                            'inter_branch' => 'Inter-Branch Transfer',
-                            'supplier'     => 'From Supplier / Pertamina',
-                        ])
-                        ->default('inter_branch')
-                        ->required()
-                        ->live()
-                        ->columnSpan(2),
-
                     Forms\Components\TextInput::make('do_number')
                         ->label('DO Number')
                         ->placeholder('e.g. DO2026-001')
@@ -77,7 +67,7 @@ class DeliveryOrderResource extends Resource
                         ->columnSpan(1),
 
                     Forms\Components\Select::make('cylinder_type')
-                        ->label('Cylinder Type')
+                        ->label('Cylinder Type / Jenis Tabung')
                         ->options([
                             '3kg'   => '3 kg',
                             '5.5kg' => '5.5 kg',
@@ -88,7 +78,7 @@ class DeliveryOrderResource extends Resource
                         ->columnSpan(1),
 
                     Forms\Components\TextInput::make('quantity_ordered')
-                        ->label('Quantity Ordered')
+                        ->label('Quantity Ordered / Jumlah')
                         ->numeric()
                         ->required()
                         ->minValue(1)
@@ -96,28 +86,28 @@ class DeliveryOrderResource extends Resource
                         ->columnSpan(1),
                 ])->columns(2),
 
-            Forms\Components\Section::make('Route & Expedition')
-                ->description('Origin, destination, and shipping details')
-                ->schema([
-                    Forms\Components\TextInput::make('supplier_name')
-                        ->label('Supplier / Vendor Name')
-                        ->placeholder('e.g. PT Pertamina (Persero)')
-                        ->nullable()
-                        ->columnSpan(2)
-                        ->visible(fn(Get $get) => $get('order_type') === 'supplier')
-                        ->required(fn(Get $get) => $get('order_type') === 'supplier'),
+            // ----- Hidden auto-set fields for non-pusat users -----
+            Forms\Components\Hidden::make('order_type')
+                ->default('inter_branch'),
 
+            Forms\Components\Hidden::make('origin_branch_id')
+                ->default(fn() => $mainBranch?->id),
+
+            Forms\Components\Hidden::make('destination_branch_id')
+                ->default(fn() => $isPusat ? null : $user->branch_id),
+
+            // ----- Route section (visible only for pusat/edit context) -----
+            Forms\Components\Section::make('Route & Expedition')
+                ->description('Origin, destination, and shipping details (pusat only)')
+                ->visible(fn() => $isPusat)
+                ->schema([
                     Forms\Components\Select::make('origin_branch_id')
-                        ->label('Origin Branch / Asal')
+                        ->label('Origin Branch / Asal (Pusat)')
                         ->options(Branch::active()->pluck('name', 'id'))
                         ->searchable()
-                        ->columnSpan(1)
-                        ->disabled(fn() => ! $isPusat)
-                        ->dehydrated()
-                        ->default(fn() => $isPusat ? null : $user->branch_id)
-                        ->helperText(fn() => $isPusat ? 'Select origin branch' : 'Auto-set to your branch')
-                        ->visible(fn(Get $get) => $get('order_type') !== 'supplier')
-                        ->required(fn(Get $get) => $get('order_type') !== 'supplier'),
+                        ->required()
+                        ->default($mainBranch?->id)
+                        ->columnSpan(1),
 
                     Forms\Components\Select::make('destination_branch_id')
                         ->label('Destination Branch / Tujuan')
@@ -176,12 +166,9 @@ class DeliveryOrderResource extends Resource
             ->modifyQueryUsing(function (Builder $query) use ($user, $isPusat) {
                 $query->with(['originBranch', 'destinationBranch', 'expedition']);
 
-                // Branch-scoping: non-pusat users only see their own DOs
                 if (! $isPusat && $user->branch_id) {
-                    $query->where(function (Builder $q) use ($user) {
-                        $q->where('origin_branch_id', $user->branch_id)
-                            ->orWhere('destination_branch_id', $user->branch_id);
-                    });
+                    // Regular branch: see DOs where they are the destination (incoming stock request)
+                    $query->where('destination_branch_id', $user->branch_id);
                 }
             })
             ->columns([
@@ -193,22 +180,12 @@ class DeliveryOrderResource extends Resource
                     ->sortable()
                     ->copyable(),
 
-                Tables\Columns\TextColumn::make('order_type')
-                    ->label('Type')
-                    ->badge()
-                    ->color(fn($state) => $state === 'supplier' ? 'warning' : 'info')
-                    ->formatStateUsing(fn($state) => $state === 'supplier' ? 'Supplier' : 'Inter-Branch')
-                    ->toggleable(isToggledHiddenByDefault: true),
-
                 Tables\Columns\TextColumn::make('originBranch.name')
-                    ->label('From')
-                    ->getStateUsing(fn($record) => $record->order_type === 'supplier'
-                        ? ($record->supplier_name ?? '—')
-                        : ($record->originBranch?->name ?? '—'))
+                    ->label('From (Pusat)')
                     ->searchable(),
 
                 Tables\Columns\TextColumn::make('destinationBranch.name')
-                    ->label('To')
+                    ->label('To (Branch)')
                     ->searchable(),
 
                 Tables\Columns\TextColumn::make('cylinder_type')
@@ -269,13 +246,6 @@ class DeliveryOrderResource extends Resource
                     ->toggleable(),
             ])
             ->filters([
-                Tables\Filters\SelectFilter::make('order_type')
-                    ->label('Order Type')
-                    ->options([
-                        'inter_branch' => 'Inter-Branch',
-                        'supplier'     => 'From Supplier',
-                    ]),
-
                 Tables\Filters\SelectFilter::make('status')
                     ->options([
                         'draft'            => 'Draft',
@@ -453,6 +423,14 @@ class DeliveryOrderResource extends Resource
                 ]),
             ])
             ->defaultSort('order_date', 'desc');
+    }
+
+    /** Pusat cannot create DOs — only approve/manage. */
+    public static function canCreate(): bool
+    {
+        $user = auth()->user();
+
+        return ! $user->isOwnerPusat() && ! $user->isRegionalLeader();
     }
 
     public static function getRelations(): array

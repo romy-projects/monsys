@@ -75,11 +75,11 @@ class ProfitLossReport extends Page
         $startDate = $this->start_date ?: now()->startOfMonth()->toDateString();
         $endDate   = $this->end_date   ?: now()->toDateString();
 
-        $revenueQuery = DailySale::query()
+        $salesQuery = DailySale::query()
             ->whereBetween('sale_date', [$startDate, $endDate])
             ->when($branchId, fn($q) => $q->where('branch_id', $branchId));
 
-        $totalRevenue = (float) $revenueQuery->sum('total_revenue');
+        $totalRevenue = (float) $salesQuery->sum('total_revenue');
 
         $revenueByType = DailySale::query()
             ->whereBetween('sale_date', [$startDate, $endDate])
@@ -96,45 +96,37 @@ class ProfitLossReport extends Page
             ->groupBy('cost_category')
             ->pluck('total', 'cost_category');
 
-        // Calculate weighted-average HPP (COGS) for each cylinder type sold
-        $totalHpp = 0.0;
+        // ── HPP calculation: match each sale's price at its sale_date ──
+        $allSalesInPeriod = DailySale::query()
+            ->whereBetween('sale_date', [$startDate, $endDate])
+            ->when($branchId, fn($q) => $q->where('branch_id', $branchId))
+            ->select(['sale_date', 'cylinder_type', 'quantity'])
+            ->get();
+
+        $totalHpp = LpgPrice::totalHppForSales($allSalesInPeriod, $branchId);
+
+        // Per-type HPP details
         $hppDetails = [];
         foreach ($revenueByType as $type => $data) {
             $qtySold = (int) $data->qty;
             if ($qtySold <= 0) continue;
 
-            // Get weighted average purchase_price within the report period
-            $avgHpp = LpgPrice::where('cylinder_type', $type)
-                ->when($branchId, fn($q) => $q->where('branch_id', $branchId)->orWhereNull('branch_id'))
-                ->where('effective_date', '<=', $endDate)
-                ->orderBy('effective_date', 'desc')
-                ->limit(1)
-                ->value('purchase_price');
+            $typeSales = $allSalesInPeriod->where('cylinder_type', $type);
+            $typeHpp   = LpgPrice::totalHppForSales($typeSales, $branchId);
+            $avgHpp    = $qtySold > 0 ? round($typeHpp / $qtySold, 2) : 0;
 
-            // If no branch-specific price found, try global
-            if (! $avgHpp && $branchId) {
-                $avgHpp = LpgPrice::where('cylinder_type', $type)
-                    ->whereNull('branch_id')
-                    ->where('effective_date', '<=', $endDate)
-                    ->orderBy('effective_date', 'desc')
-                    ->limit(1)
-                    ->value('purchase_price');
-            }
-
-            $avgHpp = (float) ($avgHpp ?? 0);
-            $totalHpp += $avgHpp * $qtySold;
             $hppDetails[$type] = [
                 'qty'         => $qtySold,
                 'avg_hpp'     => $avgHpp,
-                'total_hpp'   => $avgHpp * $qtySold,
+                'total_hpp'   => $typeHpp,
                 'total_rev'   => (float) $data->total,
             ];
         }
 
-        $totalCosts  = (float) $costsByCategory->sum();
+        $totalCosts    = (float) $costsByCategory->sum();
         $totalExpenses = $totalHpp + $totalCosts;
-        $grossProfit = $totalRevenue - $totalExpenses;
-        $margin      = $totalRevenue > 0 ? round(($grossProfit / $totalRevenue) * 100, 1) : 0;
+        $grossProfit   = $totalRevenue - $totalExpenses;
+        $margin        = $totalRevenue > 0 ? round(($grossProfit / $totalRevenue) * 100, 1) : 0;
 
         $categoryLabels = [
             'fuel'      => '⛽ Fuel / BBM',

@@ -64,12 +64,48 @@ class InvoiceResource extends Resource
                         })
                         ->columnSpan(1),
 
-                    Forms\Components\Select::make('customer_id')
-                        ->label('Customer')
-                        ->options(Customer::active()->orderBy('name')->pluck('name', 'id'))
-                        ->searchable()
-                        ->nullable()
+                    // Reference: Pusat invoices target branches; Branch invoices target customers
+                    Forms\Components\Select::make('reference_type')
+                        ->label('Reference Type')
+                        ->options([
+                            'customer' => 'Customer',
+                            'branch'   => 'Branch',
+                        ])
+                        ->default(fn() => $isPusat ? 'branch' : 'customer')
+                        ->required()
+                        ->live()
+                        ->visible(fn() => $isPusat)
                         ->columnSpan(1),
+
+                    Forms\Components\Select::make('reference_id')
+                        ->label('Customer / Branch')
+                        ->options(function (Forms\Get $get) use ($user, $isPusat) {
+                            $type = $get('reference_type') ?? ($isPusat ? 'branch' : 'customer');
+
+                            if ($type === 'branch') {
+                                return Branch::active()
+                                    ->where('id', '!=', $user->branch_id)
+                                    ->orderBy('name')
+                                    ->pluck('name', 'id');
+                            }
+
+                            $query = Customer::active()->orderBy('name');
+
+                            if (! $isPusat) {
+                                $query->where('branch_id', $user->branch_id);
+                            }
+
+                            return $query->pluck('name', 'id');
+                        })
+                        ->searchable()
+                        ->required()
+                        ->columnSpan(1)
+                        ->afterStateHydrated(function (Forms\Components\Select $component, ?Invoice $record) use ($isPusat) {
+                            // When editing, set reference_type from the record
+                            if ($record && $record->reference_type) {
+                                $component->getContainer()->getComponent('reference_type')?->state($record->reference_type);
+                            }
+                        }),
 
                     Forms\Components\Select::make('cylinder_type')
                         ->label('Cylinder Type')
@@ -177,10 +213,11 @@ class InvoiceResource extends Resource
                     ->label('Branch')
                     ->searchable(),
 
-                Tables\Columns\TextColumn::make('customer.name')
-                    ->label('Customer')
+                Tables\Columns\TextColumn::make('reference_name')
+                    ->label('Customer / Branch')
                     ->placeholder('—')
-                    ->searchable(),
+                    ->searchable()
+                    ->getStateUsing(fn(Invoice $record) => $record->reference_name ?? '—'),
 
                 Tables\Columns\TextColumn::make('cylinder_type')
                     ->label('Type')

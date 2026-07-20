@@ -11,6 +11,7 @@ use App\Http\Controllers\Api\ReportController;
 use App\Http\Controllers\Api\SalesController;
 use App\Http\Controllers\Api\ScanController;
 use App\Http\Controllers\Api\StockController;
+use App\Http\Controllers\ImportController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -105,5 +106,9 @@ Route::group([], function () {
         // Device Tokens
         Route::post('device/token', [DeviceController::class, 'registerToken']);
         Route::post('device/revoke', [DeviceController::class, 'revokeToken']);
+
+        // Import / Export — Data
+        Route::get('import/templates/{table}', [ImportController::class, 'downloadTemplate']);
+        Route::post('import/{table}', [ImportController::class, 'import']);
     });
 });

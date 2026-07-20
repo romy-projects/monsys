@@ -87,4 +87,16 @@ class Branch extends Model
     {
         return $query->where('status', 'active');
     }
+
+    /** Filter only the main/pusat branch (where owner_pusat users are assigned) */
+    public function scopeMainBranch($query)
+    {
+        return $query->whereHas('users', fn($q) => $q->where('role', 'owner_pusat'));
+    }
+
+    /** Check if this branch is the main/pusat branch */
+    public function getIsMainAttribute(): bool
+    {
+        return $this->users()->where('role', 'owner_pusat')->exists();
+    }
 }

@@ -15,6 +15,8 @@ class Invoice extends Model
         'branch_id',
         'invoice_number',
         'customer_id',
+        'reference_type',
+        'reference_id',
         'cylinder_type',
         'quantity',
         'unit_price',
@@ -44,6 +46,22 @@ class Invoice extends Model
     public function customer(): BelongsTo
     {
         return $this->belongsTo(Customer::class);
+    }
+
+    /** Polymorphic reference: can be a Customer or a Branch. */
+    public function reference(): \Illuminate\Database\Eloquent\Relations\MorphTo
+    {
+        return $this->morphTo();
+    }
+
+    /** Get the display name for the reference (customer name or branch name). */
+    public function getReferenceNameAttribute(): ?string
+    {
+        if ($this->reference_type === 'branch' && $this->reference) {
+            return $this->reference->name;
+        }
+
+        return $this->customer?->name;
     }
 
     public function createdBy(): BelongsTo

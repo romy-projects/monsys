@@ -11,6 +11,7 @@ use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 
 class DailySaleResource extends Resource
 {
@@ -128,11 +129,12 @@ class DailySaleResource extends Resource
         $user = auth()->user();
 
         return $table
-            ->modifyQueryUsing(fn ($query) =>
+            ->modifyQueryUsing(
+                fn($query) =>
                 $query->with(['branch', 'createdBy'])
                     ->when(
                         ! $user?->isOwnerPusat() && ! $user?->isRegionalLeader(),
-                        fn ($q) => $q->where('branch_id', $user?->branch_id)
+                        fn($q) => $q->where('branch_id', $user?->branch_id)
                     )
             )
             ->columns([
@@ -154,13 +156,13 @@ class DailySaleResource extends Resource
                 Tables\Columns\TextColumn::make('buyer_type')
                     ->label('Buyer')
                     ->badge()
-                    ->color(fn ($state) => match ($state) {
+                    ->color(fn($state) => match ($state) {
                         'retail'    => 'gray',
                         'agent'     => 'warning',
                         'corporate' => 'primary',
                         default     => 'gray',
                     })
-                    ->formatStateUsing(fn ($state) => match ($state) {
+                    ->formatStateUsing(fn($state) => match ($state) {
                         'retail'    => 'Retail',
                         'agent'     => 'Agent',
                         'corporate' => 'Corporate',
@@ -169,16 +171,16 @@ class DailySaleResource extends Resource
 
                 Tables\Columns\TextColumn::make('quantity')
                     ->label('Qty')
-                    ->formatStateUsing(fn ($state) => number_format($state) . ' pcs')
+                    ->formatStateUsing(fn($state) => number_format($state) . ' pcs')
                     ->sortable(),
 
                 Tables\Columns\TextColumn::make('selling_price')
                     ->label('Price/Unit')
-                    ->formatStateUsing(fn ($state) => 'Rp ' . number_format($state, 0, ',', '.')),
+                    ->formatStateUsing(fn($state) => 'Rp ' . number_format($state, 0, ',', '.')),
 
                 Tables\Columns\TextColumn::make('total_revenue')
                     ->label('Total Revenue')
-                    ->formatStateUsing(fn ($state) => 'Rp ' . number_format($state, 0, ',', '.'))
+                    ->formatStateUsing(fn($state) => 'Rp ' . number_format($state, 0, ',', '.'))
                     ->weight(\Filament\Support\Enums\FontWeight::SemiBold)
                     ->color('success')
                     ->sortable(),
@@ -197,7 +199,7 @@ class DailySaleResource extends Resource
                 Tables\Filters\SelectFilter::make('branch_id')
                     ->label('Branch')
                     ->options(Branch::active()->pluck('name', 'id'))
-                    ->visible(fn () => $user?->isOwnerPusat() || $user?->isRegionalLeader()),
+                    ->visible(fn() => $user?->isOwnerPusat() || $user?->isRegionalLeader()),
 
                 Tables\Filters\SelectFilter::make('cylinder_type')
                     ->options([
@@ -219,14 +221,17 @@ class DailySaleResource extends Resource
                         Forms\Components\DatePicker::make('from')->label('From'),
                         Forms\Components\DatePicker::make('until')->label('Until'),
                     ])
-                    ->query(fn ($query, array $data) => $query
-                        ->when($data['from'],  fn ($q) => $q->whereDate('sale_date', '>=', $data['from']))
-                        ->when($data['until'], fn ($q) => $q->whereDate('sale_date', '<=', $data['until']))
+                    ->query(
+                        fn($query, array $data) => $query
+                            ->when($data['from'],  fn($q) => $q->whereDate('sale_date', '>=', $data['from']))
+                            ->when($data['until'], fn($q) => $q->whereDate('sale_date', '<=', $data['until']))
                     ),
             ])
             ->actions([
-                Tables\Actions\EditAction::make(),
-                Tables\Actions\DeleteAction::make(),
+                Tables\Actions\EditAction::make()
+                    ->visible(fn() => ! auth()->user()->isOwnerPusat() && ! auth()->user()->isRegionalLeader()),
+                Tables\Actions\DeleteAction::make()
+                    ->visible(fn() => ! auth()->user()->isOwnerPusat() && ! auth()->user()->isRegionalLeader()),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
@@ -239,6 +244,14 @@ class DailySaleResource extends Resource
     public static function getRelations(): array
     {
         return [];
+    }
+
+    /** Pusat/Regional can only monitor — cannot create sales. */
+    public static function canCreate(): bool
+    {
+        $user = auth()->user();
+
+        return ! $user->isOwnerPusat() && ! $user->isRegionalLeader();
     }
 
     public static function getPages(): array
