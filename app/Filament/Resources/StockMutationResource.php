@@ -88,13 +88,13 @@ class StockMutationResource extends Resource
 
                     Forms\Components\TextInput::make('reference_no')
                         ->label('Reference No / No Referensi')
-                        ->placeholder('e.g. DO2026-001 or PO-001')
+                        ->placeholder('e.g. DO2026-001')
                         ->nullable()
                         ->columnSpan(1),
                 ])->columns(2),
 
             Forms\Components\Section::make('Transfer Details')
-                ->visible(fn (Forms\Get $get) => $get('mutation_type') === 'transfer')
+                ->visible(fn(Forms\Get $get) => $get('mutation_type') === 'transfer')
                 ->schema([
                     Forms\Components\Select::make('source_branch_id')
                         ->label('Source Branch / Cabang Asal')
@@ -127,11 +127,12 @@ class StockMutationResource extends Resource
         $user = auth()->user();
 
         return $table
-            ->modifyQueryUsing(fn ($query) =>
+            ->modifyQueryUsing(
+                fn($query) =>
                 $query->with(['branch', 'sourceBranch', 'destinationBranch', 'createdBy'])
                     ->when(
                         ! $user?->isOwnerPusat() && ! $user?->isRegionalLeader(),
-                        fn ($q) => $q->where('branch_id', $user?->branch_id)
+                        fn($q) => $q->where('branch_id', $user?->branch_id)
                     )
             )
             ->columns([
@@ -147,14 +148,14 @@ class StockMutationResource extends Resource
                 Tables\Columns\TextColumn::make('mutation_type')
                     ->label('Type')
                     ->badge()
-                    ->color(fn ($state) => match ($state) {
+                    ->color(fn($state) => match ($state) {
                         'in'         => 'success',
                         'out'        => 'danger',
                         'transfer'   => 'info',
                         'adjustment' => 'warning',
                         default      => 'gray',
                     })
-                    ->formatStateUsing(fn ($state) => match ($state) {
+                    ->formatStateUsing(fn($state) => match ($state) {
                         'in'         => 'Stock In',
                         'out'        => 'Stock Out',
                         'transfer'   => 'Transfer',
@@ -169,7 +170,7 @@ class StockMutationResource extends Resource
 
                 Tables\Columns\TextColumn::make('quantity')
                     ->label('Quantity')
-                    ->formatStateUsing(fn ($state) => number_format($state) . ' pcs')
+                    ->formatStateUsing(fn($state) => number_format($state) . ' pcs')
                     ->weight(\Filament\Support\Enums\FontWeight::SemiBold),
 
                 Tables\Columns\TextColumn::make('reference_no')
@@ -193,7 +194,7 @@ class StockMutationResource extends Resource
                 Tables\Filters\SelectFilter::make('branch_id')
                     ->label('Branch')
                     ->options(Branch::active()->pluck('name', 'id'))
-                    ->visible(fn () => $user?->isOwnerPusat() || $user?->isRegionalLeader()),
+                    ->visible(fn() => $user?->isOwnerPusat() || $user?->isRegionalLeader()),
 
                 Tables\Filters\SelectFilter::make('mutation_type')
                     ->label('Type')
@@ -217,9 +218,10 @@ class StockMutationResource extends Resource
                         Forms\Components\DatePicker::make('from')->label('From'),
                         Forms\Components\DatePicker::make('until')->label('Until'),
                     ])
-                    ->query(fn ($query, array $data) => $query
-                        ->when($data['from'],  fn ($q) => $q->whereDate('mutation_date', '>=', $data['from']))
-                        ->when($data['until'], fn ($q) => $q->whereDate('mutation_date', '<=', $data['until']))
+                    ->query(
+                        fn($query, array $data) => $query
+                            ->when($data['from'],  fn($q) => $q->whereDate('mutation_date', '>=', $data['from']))
+                            ->when($data['until'], fn($q) => $q->whereDate('mutation_date', '<=', $data['until']))
                     ),
             ])
             ->actions([

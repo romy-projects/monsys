@@ -30,7 +30,7 @@ class AdminPanelProvider extends PanelProvider
             ->darkMode(true)
             ->brandName('SUM Energy Network')
             ->brandLogo(asset('images/logo.svg'))
-            ->brandLogoHeight('2.5rem')
+            ->brandLogoHeight('4.5rem')
             ->favicon(asset('images/favicon.ico'))
             ->colors([
                 'primary'   => Color::hex('#1e3a5f'),   // Deep Navy Blue
@@ -43,25 +43,25 @@ class AdminPanelProvider extends PanelProvider
             ->font('Inter', 'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap')
             ->navigationGroups([
                 NavigationGroup::make()
-                    ->label(fn () => __('nav.group.dashboard'))
+                    ->label(fn() => __('nav.group.dashboard'))
                     ->icon('heroicon-o-chart-bar'),
                 NavigationGroup::make()
-                    ->label(fn () => __('nav.group.stock'))
+                    ->label(fn() => __('nav.group.stock'))
                     ->icon('heroicon-o-cube'),
                 NavigationGroup::make()
-                    ->label(fn () => __('nav.group.delivery'))
+                    ->label(fn() => __('nav.group.delivery'))
                     ->icon('heroicon-o-truck'),
                 NavigationGroup::make()
-                    ->label(fn () => __('nav.group.sales'))
+                    ->label(fn() => __('nav.group.sales'))
                     ->icon('heroicon-o-currency-dollar'),
                 NavigationGroup::make()
-                    ->label(fn () => __('nav.group.finance'))
+                    ->label(fn() => __('nav.group.finance'))
                     ->icon('heroicon-o-chart-pie'),
                 NavigationGroup::make()
-                    ->label(fn () => __('nav.group.master'))
+                    ->label(fn() => __('nav.group.master'))
                     ->icon('heroicon-o-cog-6-tooth'),
                 NavigationGroup::make()
-                    ->label(fn () => __('nav.group.reports'))
+                    ->label(fn() => __('nav.group.reports'))
                     ->icon('heroicon-o-document-text'),
             ])
             ->databaseNotifications()

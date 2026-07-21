@@ -99,13 +99,7 @@ class InvoiceResource extends Resource
                         })
                         ->searchable()
                         ->required()
-                        ->columnSpan(1)
-                        ->afterStateHydrated(function (Forms\Components\Select $component, ?Invoice $record) use ($isPusat) {
-                            // When editing, set reference_type from the record
-                            if ($record && $record->reference_type) {
-                                $component->getContainer()->getComponent('reference_type')?->state($record->reference_type);
-                            }
-                        }),
+                        ->columnSpan(1),
 
                     Forms\Components\Select::make('cylinder_type')
                         ->label('Cylinder Type')

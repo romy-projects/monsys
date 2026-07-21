@@ -4,6 +4,7 @@ namespace App\Filament\Pages;
 
 use App\Models\Branch;
 use App\Models\StockItem;
+use App\Models\StockMutation;
 use Filament\Pages\Page;
 
 class StockSummaryReport extends Page
@@ -45,6 +46,13 @@ class StockSummaryReport extends Page
         return Branch::where('id', $user?->branch_id)->get();
     }
 
+    /**
+     * Compute realtime stock per branch per cylinder type.
+     *
+     * Uses the latest stock_items record as a base (physical count),
+     * then adjusts it with all stock_mutations that occurred AFTER that count date.
+     * If no stock_items record exists, computes entirely from mutations.
+     */
     public function getStockMatrix(): array
     {
         $types = ['3kg', '5.5kg', '12kg', '50kg'];
@@ -58,34 +66,80 @@ class StockSummaryReport extends Page
         }
 
         $branches = $branchQuery->get();
+        $branchIds = $branches->pluck('id');
 
-        $latestStocks = StockItem::whereIn('branch_id', $branches->pluck('id'))
+        // Get latest stock_items record per branch + cylinder_type
+        $latestStocks = StockItem::whereIn('branch_id', $branchIds)
             ->get()
             ->sortByDesc('recorded_at')
             ->groupBy('branch_id')
-            ->map(fn ($items) => $items->unique('cylinder_type')->keyBy('cylinder_type'));
+            ->map(function ($items) {
+                return $items->groupBy('cylinder_type')->map->first();
+            });
+
+        // Get all stock_mutations for these branches
+        $mutations = StockMutation::whereIn('branch_id', $branchIds)->get();
 
         $rows   = [];
         $totals = array_fill_keys($types, ['full' => 0, 'empty' => 0, 'damaged' => 0]);
 
         foreach ($branches as $branch) {
-            $stocks = $latestStocks->get($branch->id, collect());
-            $row    = ['branch' => $branch];
+            $branchStocks = $latestStocks->get($branch->id, collect());
+            $branchMutations = $mutations->where('branch_id', $branch->id);
+
+            $row = ['branch' => $branch];
 
             foreach ($types as $type) {
-                $s = $stocks->get($type);
+                $base = $branchStocks->get($type);
+
+                // Start from latest physical count (if exists)
+                $full    = $base?->qty_full ?? 0;
+                $empty   = $base?->qty_empty ?? 0;
+                $damaged = $base?->qty_damaged ?? 0;
+                $baseDate = $base?->recorded_at;
+
+                // Apply mutations that occurred AFTER the base record date,
+                // OR all mutations if no base record exists
+                $relevantMutations = $branchMutations->where('cylinder_type', $type);
+
+                if ($baseDate) {
+                    $relevantMutations = $relevantMutations->where('mutation_date', '>', $baseDate);
+                }
+
+                foreach ($relevantMutations as $mut) {
+                    switch ($mut->mutation_type) {
+                        case 'in':
+                            $full += $mut->quantity;
+                            break;
+                        case 'out':
+                            $full -= $mut->quantity;
+                            break;
+                        case 'transfer':
+                            // Deduct from source, add to destination
+                            if ($mut->source_branch_id === $branch->id) {
+                                $full -= $mut->quantity;
+                            }
+                            if ($mut->destination_branch_id === $branch->id) {
+                                $full += $mut->quantity;
+                            }
+                            break;
+                            // adjustment: full qty is overridden by the physical count
+                    }
+                }
+
+                // Clamp to zero (physical stock can't be negative)
+                $full = max(0, $full);
+
                 $row[$type] = [
-                    'full'    => $s?->qty_full    ?? null,
-                    'empty'   => $s?->qty_empty   ?? null,
-                    'damaged' => $s?->qty_damaged  ?? null,
-                    'date'    => $s?->recorded_at,
+                    'full'    => $full,
+                    'empty'   => $empty,
+                    'damaged' => $damaged,
+                    'date'    => $baseDate,
                 ];
 
-                if ($s) {
-                    $totals[$type]['full']    += $s->qty_full;
-                    $totals[$type]['empty']   += $s->qty_empty;
-                    $totals[$type]['damaged'] += $s->qty_damaged;
-                }
+                $totals[$type]['full']    += $full;
+                $totals[$type]['empty']   += $empty;
+                $totals[$type]['damaged'] += $damaged;
             }
 
             $rows[] = $row;

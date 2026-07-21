@@ -56,21 +56,34 @@ class SalesPeriodReport extends Page
         $endDate   = $this->end_date   ?: now()->toDateString();
         $branchId  = $this->branch_id;
 
+        // Sales by cylinder type for the selected branch/all branches
         $byType = DailySale::query()
             ->whereBetween('sale_date', [$startDate, $endDate])
-            ->when($branchId, fn ($q) => $q->where('branch_id', $branchId))
+            ->when($branchId, fn($q) => $q->where('branch_id', $branchId))
             ->selectRaw('cylinder_type, SUM(quantity) as total_qty, SUM(total_revenue) as total_revenue, COUNT(DISTINCT sale_date) as days_active')
             ->groupBy('cylinder_type')
             ->get()
             ->keyBy('cylinder_type');
 
+        // Daily trend
         $byDate = DailySale::query()
             ->whereBetween('sale_date', [$startDate, $endDate])
-            ->when($branchId, fn ($q) => $q->where('branch_id', $branchId))
+            ->when($branchId, fn($q) => $q->where('branch_id', $branchId))
             ->selectRaw('sale_date, SUM(quantity) as total_qty, SUM(total_revenue) as total_revenue')
             ->groupBy('sale_date')
             ->orderBy('sale_date')
             ->get();
+
+        // Per-branch breakdown (only for HQ/regional view without branch filter)
+        $byBranch = [];
+        if (! $branchId) {
+            $byBranch = DailySale::query()
+                ->whereBetween('sale_date', [$startDate, $endDate])
+                ->selectRaw('branch_id, cylinder_type, SUM(quantity) as total_qty, SUM(total_revenue) as total_revenue')
+                ->groupBy('branch_id', 'cylinder_type')
+                ->get()
+                ->groupBy('branch_id');
+        }
 
         $totalRevenue = (float) $byType->sum('total_revenue');
         $totalQty     = (int)   $byType->sum('total_qty');
@@ -78,6 +91,7 @@ class SalesPeriodReport extends Page
         return [
             'by_type'       => $byType,
             'by_date'       => $byDate,
+            'by_branch'     => $byBranch,
             'total_revenue' => $totalRevenue,
             'total_qty'     => $totalQty,
             'start_date'    => $startDate,
