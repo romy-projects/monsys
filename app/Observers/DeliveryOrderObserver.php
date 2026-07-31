@@ -12,6 +12,14 @@ class DeliveryOrderObserver
 {
     public function updated(DeliveryOrder $do): void
     {
+        // Sync: shipment_status = delivered_to_destination → auto-transition do_status to delivered
+        if ($do->wasChanged('shipment_status') && $do->shipment_status === 'delivered_to_destination') {
+            $do->status = 'delivered';
+            $do->saveQuietly();
+            $this->handleDelivered($do);
+            return;
+        }
+
         if (! $do->wasChanged('status')) {
             return;
         }

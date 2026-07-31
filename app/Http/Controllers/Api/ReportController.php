@@ -29,9 +29,9 @@ class ReportController extends Controller
         $startDate = $request->input('start_date', now()->startOfMonth()->toDateString());
         $endDate   = $request->input('end_date',   now()->endOfMonth()->toDateString());
 
-        $query = fn ($model, $dateCol) => $model::query()
-            ->when(! $user->isOwnerPusat() && ! $user->isRegionalLeader(), fn ($q) => $q->where('branch_id', $user->branch_id))
-            ->when($request->filled('branch_id') && ($user->isOwnerPusat() || $user->isRegionalLeader()), fn ($q) => $q->where('branch_id', $request->branch_id))
+        $query = fn($model, $dateCol) => $model::query()
+            ->when(! $user->isOwnerPusat() && ! $user->isRegionalLeader(), fn($q) => $q->where('branch_id', $user->branch_id))
+            ->when($request->filled('branch_id') && ($user->isOwnerPusat() || $user->isRegionalLeader()), fn($q) => $q->where('branch_id', $request->branch_id))
             ->whereDate($dateCol, '>=', $startDate)
             ->whereDate($dateCol, '<=', $endDate);
 
@@ -42,22 +42,37 @@ class ReportController extends Controller
             ->selectRaw('cost_category, SUM(amount) as total')
             ->groupBy('cost_category')
             ->pluck('total', 'cost_category')
-            ->map(fn ($v) => (float) $v);
+            ->map(fn($v) => (float) $v);
+
+        $branchId = $request->filled('branch_id')
+            ? (int) $request->branch_id
+            : ($user->isOwnerPusat() || $user->isRegionalLeader() ? null : $user->branch_id);
+
+        // Date-matched HPP
+        $rawSales = $query(DailySale::class, 'sale_date')
+            ->select(['sale_date', 'cylinder_type', 'quantity'])
+            ->get();
+        $totalHpp = LpgPrice::totalHppForSales($rawSales, $branchId);
 
         $salesByType = $query(DailySale::class, 'sale_date')
             ->selectRaw('cylinder_type, SUM(total_revenue) as revenue, SUM(quantity) as qty')
             ->groupBy('cylinder_type')
             ->get()
-            ->map(fn ($r) => ['cylinder_type' => $r->cylinder_type, 'revenue' => (float) $r->revenue, 'qty' => (int) $r->qty]);
+            ->map(fn($r) => ['cylinder_type' => $r->cylinder_type, 'revenue' => (float) $r->revenue, 'qty' => (int) $r->qty]);
+
+        $totalExpenses = $totalHpp + $costs;
+        $netProfit     = $revenue - $totalExpenses;
 
         return $this->success([
             'period'           => ['start' => $startDate, 'end' => $endDate],
             'total_revenue'    => $revenue,
+            'total_hpp'        => $totalHpp,
             'total_costs'      => $costs,
-            'net_profit'       => $revenue - $costs,
-            'margin_pct'       => $revenue > 0 ? round(($revenue - $costs) / $revenue * 100, 2) : 0,
+            'total_expenses'   => $totalExpenses,
+            'net_profit'       => $netProfit,
+            'margin_pct'       => $revenue > 0 ? round($netProfit / $revenue * 100, 2) : 0,
             'revenue_by_type'  => $salesByType,
-            'costs_by_category'=> $costsByCategory,
+            'costs_by_category' => $costsByCategory,
         ]);
     }
 
@@ -75,10 +90,10 @@ class ReportController extends Controller
         $rows = $query->orderBy('branch_id')->orderBy('cylinder_type')->get();
 
         // Group by branch
-        $grouped = $rows->groupBy('branch_id')->map(fn ($items, $branchId) => [
+        $grouped = $rows->groupBy('branch_id')->map(fn($items, $branchId) => [
             'branch_id'   => $branchId,
             'branch_name' => $items->first()->branch?->name,
-            'items'       => $items->map(fn ($s) => [
+            'items'       => $items->map(fn($s) => [
                 'cylinder_type' => $s->cylinder_type,
                 'qty_full'      => (int) $s->qty_full,
                 'qty_empty'     => (int) $s->qty_empty,
@@ -104,13 +119,14 @@ class ReportController extends Controller
             ->with(['originBranch', 'destinationBranch', 'expedition', 'vehicle']);
 
         if (! $user->isOwnerPusat() && ! $user->isRegionalLeader()) {
-            $query->where(fn ($q) => $q
-                ->where('origin_branch_id', $user->branch_id)
-                ->orWhere('destination_branch_id', $user->branch_id)
+            $query->where(
+                fn($q) => $q
+                    ->where('origin_branch_id', $user->branch_id)
+                    ->orWhere('destination_branch_id', $user->branch_id)
             );
         }
 
-        $dos = $query->orderBy('eta')->get()->map(fn ($do) => [
+        $dos = $query->orderBy('eta')->get()->map(fn($do) => [
             'id'             => $do->id,
             'do_number'      => $do->do_number,
             'cylinder_type'  => $do->cylinder_type,
@@ -143,26 +159,26 @@ class ReportController extends Controller
         $endDate   = $request->input('end_date',   now()->endOfMonth()->toDateString());
 
         $query = DailySale::query()
-            ->when(! $user->isOwnerPusat() && ! $user->isRegionalLeader(), fn ($q) => $q->where('branch_id', $user->branch_id))
-            ->when($request->filled('branch_id') && ($user->isOwnerPusat() || $user->isRegionalLeader()), fn ($q) => $q->where('branch_id', $request->branch_id))
+            ->when(! $user->isOwnerPusat() && ! $user->isRegionalLeader(), fn($q) => $q->where('branch_id', $user->branch_id))
+            ->when($request->filled('branch_id') && ($user->isOwnerPusat() || $user->isRegionalLeader()), fn($q) => $q->where('branch_id', $request->branch_id))
             ->whereDate('sale_date', '>=', $startDate)
             ->whereDate('sale_date', '<=', $endDate);
 
         $daily = (clone $query)->selectRaw('sale_date, SUM(total_revenue) as revenue, SUM(quantity) as qty')
             ->groupBy('sale_date')->orderBy('sale_date')->get()
-            ->map(fn ($r) => ['date' => $r->sale_date->toDateString(), 'revenue' => (float) $r->revenue, 'qty' => (int) $r->qty]);
+            ->map(fn($r) => ['date' => $r->sale_date->toDateString(), 'revenue' => (float) $r->revenue, 'qty' => (int) $r->qty]);
 
         $byType = (clone $query)->selectRaw('cylinder_type, SUM(total_revenue) as revenue, SUM(quantity) as qty')
             ->groupBy('cylinder_type')->get()
-            ->map(fn ($r) => ['cylinder_type' => $r->cylinder_type, 'revenue' => (float) $r->revenue, 'qty' => (int) $r->qty]);
+            ->map(fn($r) => ['cylinder_type' => $r->cylinder_type, 'revenue' => (float) $r->revenue, 'qty' => (int) $r->qty]);
 
         $byBuyer = (clone $query)->selectRaw('buyer_type, SUM(total_revenue) as revenue, SUM(quantity) as qty')
             ->groupBy('buyer_type')->get()
-            ->map(fn ($r) => ['buyer_type' => $r->buyer_type, 'revenue' => (float) $r->revenue, 'qty' => (int) $r->qty]);
+            ->map(fn($r) => ['buyer_type' => $r->buyer_type, 'revenue' => (float) $r->revenue, 'qty' => (int) $r->qty]);
 
         return $this->success([
             'period'       => ['start' => $startDate, 'end' => $endDate],
-            'total_revenue'=> (float) $query->sum('total_revenue'),
+            'total_revenue' => (float) $query->sum('total_revenue'),
             'total_qty'    => (int) $query->sum('quantity'),
             'daily'        => $daily,
             'by_type'      => $byType,
@@ -188,7 +204,7 @@ class ReportController extends Controller
         $rows = $query->groupBy('branch_id')->orderByDesc('revenue')->get();
 
         $grandTotal = $rows->sum('revenue');
-        $ranked = $rows->values()->map(fn ($r, $i) => [
+        $ranked = $rows->values()->map(fn($r, $i) => [
             'rank'         => $i + 1,
             'branch_id'    => $r->branch_id,
             'branch_name'  => $r->branch?->name,
@@ -225,10 +241,10 @@ class ReportController extends Controller
 
         $rows = $query->orderBy('branch_id')->orderBy('mutation_date')->get();
 
-        $grouped = $rows->groupBy('branch_id')->map(fn ($items, $branchId) => [
+        $grouped = $rows->groupBy('branch_id')->map(fn($items, $branchId) => [
             'branch_id'   => $branchId,
             'branch_name' => $items->first()->branch?->name,
-            'mutations'   => $items->map(fn ($m) => [
+            'mutations'   => $items->map(fn($m) => [
                 'date'          => $m->mutation_date->toDateString(),
                 'mutation_type' => $m->mutation_type,
                 'cylinder_type' => $m->cylinder_type,
@@ -245,7 +261,7 @@ class ReportController extends Controller
 
         return $this->success([
             'period'  => ['start' => $startDate, 'end' => $endDate],
-            'branches'=> $grouped,
+            'branches' => $grouped,
         ]);
     }
 
@@ -261,25 +277,43 @@ class ReportController extends Controller
 
         $salesQuery = DailySale::query()
             ->selectRaw('cylinder_type, SUM(quantity) as qty_sold, SUM(total_revenue) as revenue')
-            ->when(! $user->isOwnerPusat() && ! $user->isRegionalLeader(), fn ($q) => $q->where('branch_id', $user->branch_id))
-            ->when($request->filled('branch_id'), fn ($q) => $q->where('branch_id', $request->branch_id))
+            ->when(! $user->isOwnerPusat() && ! $user->isRegionalLeader(), fn($q) => $q->where('branch_id', $user->branch_id))
+            ->when($request->filled('branch_id'), fn($q) => $q->where('branch_id', $request->branch_id))
             ->whereDate('sale_date', '>=', $startDate)
             ->whereDate('sale_date', '<=', $endDate)
             ->groupBy('cylinder_type')
             ->get();
 
-        $rows = $salesQuery->map(function ($r) use ($endDate) {
-            $price    = LpgPrice::currentPrice($r->cylinder_type, $endDate);
-            $hpp      = $price ? (float) $price->purchase_price * $r->qty_sold : null;
-            $margin   = $hpp && $r->revenue > 0 ? $r->revenue - $hpp : null;
-            $marginPct= $r->revenue > 0 && $margin !== null ? round($margin / $r->revenue * 100, 1) : null;
+        // Fetch individual sales for date-matched HPP calculation
+        $rawSales = DailySale::query()
+            ->select(['sale_date', 'cylinder_type', 'quantity'])
+            ->when(! $user->isOwnerPusat() && ! $user->isRegionalLeader(), fn($q) => $q->where('branch_id', $user->branch_id))
+            ->when($request->filled('branch_id'), fn($q) => $q->where('branch_id', $request->branch_id))
+            ->whereDate('sale_date', '>=', $startDate)
+            ->whereDate('sale_date', '<=', $endDate)
+            ->get();
+
+        $branchId = $request->filled('branch_id')
+            ? (int) $request->branch_id
+            : ($user->isOwnerPusat() || $user->isRegionalLeader() ? null : $user->branch_id);
+
+        $totalHpp = LpgPrice::totalHppForSales($rawSales, $branchId);
+
+        $rows = $salesQuery->map(function ($r) use ($rawSales, $branchId) {
+            $typeSales = $rawSales->where('cylinder_type', $r->cylinder_type);
+            $typeHpp   = LpgPrice::totalHppForSales($typeSales, $branchId);
+            $qtySold   = (int) $r->qty_sold;
+
+            $price = LpgPrice::priceAtDate($r->cylinder_type, null, $branchId);
+            $margin   = $typeHpp && $r->revenue > 0 ? $r->revenue - $typeHpp : null;
+            $marginPct = $r->revenue > 0 && $margin !== null ? round($margin / $r->revenue * 100, 1) : null;
 
             return [
                 'cylinder_type'  => $r->cylinder_type,
-                'qty_sold'       => (int) $r->qty_sold,
+                'qty_sold'       => $qtySold,
                 'revenue'        => (float) $r->revenue,
                 'purchase_price' => $price ? (float) $price->purchase_price : null,
-                'total_hpp'      => $hpp,
+                'total_hpp'      => $typeHpp,
                 'gross_margin'   => $margin,
                 'margin_pct'     => $marginPct,
             ];
@@ -345,9 +379,9 @@ class ReportController extends Controller
             }
         }
 
-        $grandTotal = $receivables->sum(fn ($r) => max(0, (float) $r->amount - (float) $r->paid_amount));
+        $grandTotal = $receivables->sum(fn($r) => max(0, (float) $r->amount - (float) $r->paid_amount));
 
-        $result = collect($buckets)->map(fn ($b, $key) => [
+        $result = collect($buckets)->map(fn($b, $key) => [
             'key'         => $key,
             'label'       => $b['label'],
             'total'       => (float) $b['items']->sum('balance'),

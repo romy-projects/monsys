@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\DeliveryOrderController;
 use App\Http\Controllers\Api\DeviceController;
 use App\Http\Controllers\Api\InvoiceController;
 use App\Http\Controllers\Api\MasterDataController;
+use App\Http\Controllers\Api\PayableController;
 use App\Http\Controllers\Api\ReportController;
 use App\Http\Controllers\Api\SalesController;
 use App\Http\Controllers\Api\ScanController;
@@ -102,6 +103,14 @@ Route::group([], function () {
         Route::delete('invoices/{invoice}', [InvoiceController::class, 'destroy']);
         Route::post('invoices/{invoice}/pay', [InvoiceController::class, 'pay']);
         Route::post('invoices/{invoice}/issue', [InvoiceController::class, 'issue']);
+
+        // Payables
+        Route::get('payables', [PayableController::class, 'index']);
+        Route::post('payables', [PayableController::class, 'store']);
+        Route::get('payables/{payable}', [PayableController::class, 'show']);
+        Route::put('payables/{payable}', [PayableController::class, 'update']);
+        Route::delete('payables/{payable}', [PayableController::class, 'destroy']);
+        Route::post('payables/{payable}/pay', [PayableController::class, 'pay']);
 
         // Device Tokens
         Route::post('device/token', [DeviceController::class, 'registerToken']);

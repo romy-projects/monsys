@@ -7,6 +7,7 @@ use App\Models\Branch;
 use App\Models\Receivable;
 use Filament\Forms;
 use Filament\Forms\Form;
+use Filament\Forms\Get;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
@@ -51,19 +52,44 @@ class ReceivableResource extends Resource
                         ->dehydrated()
                         ->columnSpan(2),
 
-                    Forms\Components\TextInput::make('buyer_name')
-                        ->label('Buyer / Customer Name')
-                        ->required()
-                        ->maxLength(255),
-
                     Forms\Components\Select::make('buyer_type')
                         ->label('Buyer Type')
                         ->options([
                             'retail'   => 'Retail',
                             'agen'     => 'Agen',
                             'industri' => 'Industri',
+                            'branch'   => 'Pangkalan/Cabang Lain',
                         ])
-                        ->required(),
+                        ->required()
+                        ->live()
+                        ->columnSpan(2),
+
+                    Forms\Components\Select::make('debtor_branch_id')
+                        ->label('Debtor Branch / Cabang-Pangkalan')
+                        ->options(Branch::active()->orderBy('name')->pluck('name', 'id'))
+                        ->searchable()
+                        ->required(fn(Get $get) => $get('buyer_type') === 'branch')
+                        ->visible(fn(Get $get) => $get('buyer_type') === 'branch')
+                        ->live()
+                        ->afterStateUpdated(function (Forms\Set $set, $state) {
+                            if ($state) {
+                                $branch = Branch::find($state);
+                                if ($branch) {
+                                    $set('buyer_name', $branch->name);
+                                }
+                            }
+                        })
+                        ->columnSpan(2),
+
+                    Forms\Components\TextInput::make('buyer_name')
+                        ->label('Buyer / Customer Name')
+                        ->required()
+                        ->maxLength(255)
+                        ->disabled(fn(Get $get) => $get('buyer_type') === 'branch')
+                        ->dehydrated()
+                        ->helperText(fn(Get $get) => $get('buyer_type') === 'branch'
+                            ? 'Auto-filled from selected branch'
+                            : null),
 
                     Forms\Components\TextInput::make('invoice_number')
                         ->label('Invoice Number')
@@ -118,9 +144,13 @@ class ReceivableResource extends Resource
                     ->color(fn($state) => match ($state) {
                         'agen'     => 'primary',
                         'industri' => 'warning',
+                        'branch'   => 'danger',
                         default    => 'gray',
                     })
-                    ->formatStateUsing(fn($state) => ucfirst($state)),
+                    ->formatStateUsing(fn($state) => match ($state) {
+                        'branch'   => 'Cabang Lain',
+                        default    => ucfirst($state),
+                    }),
 
                 Tables\Columns\TextColumn::make('invoice_number')
                     ->label('Invoice #')
@@ -175,6 +205,7 @@ class ReceivableResource extends Resource
                         'retail'   => 'Retail',
                         'agen'     => 'Agen',
                         'industri' => 'Industri',
+                        'branch'   => 'Pangkalan/Cabang Lain',
                     ]),
 
                 Tables\Filters\SelectFilter::make('branch_id')
@@ -248,8 +279,7 @@ class ReceivableResource extends Resource
 
     public static function canAccess(): bool
     {
-        // Hidden — replaced by Invoicing module
-        return false;
+        return auth()->user()?->canViewFinance() ?? false;
     }
 
     public static function canDelete(Model $record): bool

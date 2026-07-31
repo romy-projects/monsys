@@ -21,12 +21,12 @@ class ExportController extends Controller
 
         $records = DailySale::query()
             ->with('branch')
-            ->when($request->branch_id,  fn ($q) => $q->where('branch_id', $request->branch_id))
-            ->when($request->start_date, fn ($q) => $q->whereDate('sale_date', '>=', $request->start_date))
-            ->when($request->end_date,   fn ($q) => $q->whereDate('sale_date', '<=', $request->end_date))
+            ->when($request->branch_id,  fn($q) => $q->where('branch_id', $request->branch_id))
+            ->when($request->start_date, fn($q) => $q->whereDate('sale_date', '>=', $request->start_date))
+            ->when($request->end_date,   fn($q) => $q->whereDate('sale_date', '<=', $request->end_date))
             ->when(
                 ! $user->isOwnerPusat() && ! $user->isRegionalLeader(),
-                fn ($q) => $q->where('branch_id', $user->branch_id)
+                fn($q) => $q->where('branch_id', $user->branch_id)
             )
             ->orderBy('sale_date', 'desc')
             ->get();
@@ -69,22 +69,24 @@ class ExportController extends Controller
         $sales = DailySale::query()
             ->with('branch')
             ->whereBetween('sale_date', [$startDate, $endDate])
-            ->when($branchId, fn ($q) => $q->where('branch_id', $branchId))
+            ->when($branchId, fn($q) => $q->where('branch_id', $branchId))
             ->orderBy('sale_date')
             ->get();
 
         $costs = OperationalCost::query()
             ->with('branch')
             ->whereBetween('cost_date', [$startDate, $endDate])
-            ->when($branchId, fn ($q) => $q->where('branch_id', $branchId))
+            ->when($branchId, fn($q) => $q->where('branch_id', $branchId))
             ->orderBy('cost_date')
             ->get();
 
+        $totalHpp     = \App\Models\LpgPrice::totalHppForSales($sales, $branchId);
         $branchLabel  = $branchId ? (Branch::find($branchId)?->name ?? 'Unknown') : 'All Branches';
         $totalRevenue = (float) $sales->sum('total_revenue');
         $totalCosts   = (float) $costs->sum('amount');
-        $grossProfit  = $totalRevenue - $totalCosts;
-        $margin       = $totalRevenue > 0 ? round(($grossProfit / $totalRevenue) * 100, 1) : 0;
+        $totalExpenses = $totalHpp + $totalCosts;
+        $netProfit    = $totalRevenue - $totalExpenses;
+        $margin       = $totalRevenue > 0 ? round(($netProfit / $totalRevenue) * 100, 1) : 0;
 
         $categoryLabels = [
             'fuel'      => 'Fuel / BBM',
@@ -102,6 +104,11 @@ class ExportController extends Controller
         $xlsx->addRow(['Branch:', $branchLabel]);
         $xlsx->addRow(['Period:', $startDate . ' to ' . $endDate]);
         $xlsx->addRow(['Generated:', now()->format('Y-m-d H:i')]);
+        $xlsx->addRow([]);
+
+        // HPP section
+        $xlsx->addRow(['--- HPP / COST OF GOODS SOLD ---']);
+        $xlsx->addRow(['Total HPP:', $totalHpp]);
         $xlsx->addRow([]);
 
         // Revenue section
@@ -143,8 +150,10 @@ class ExportController extends Controller
         // Summary
         $xlsx->addRow(['--- SUMMARY ---']);
         $xlsx->addRow(['Total Revenue (Rp):', $totalRevenue]);
+        $xlsx->addRow(['Total HPP (COGS) (Rp):', $totalHpp]);
         $xlsx->addRow(['Total Costs (Rp):', $totalCosts]);
-        $xlsx->addRow(['Gross Profit (Rp):', $grossProfit]);
+        $xlsx->addRow(['Total Expenses (Rp):', $totalExpenses]);
+        $xlsx->addRow(['Net Profit (Rp):', $netProfit]);
         $xlsx->addRow(['Margin:', $margin . '%']);
 
         return $xlsx->download('profit-loss-' . now()->format('Y-m-d') . '.xlsx');
@@ -160,11 +169,11 @@ class ExportController extends Controller
 
         $query = Receivable::query()
             ->with('branch')
-            ->when($request->branch_id,  fn ($q) => $q->where('branch_id', $request->branch_id))
-            ->when($request->status,     fn ($q) => $q->where('status', $request->status))
+            ->when($request->branch_id,  fn($q) => $q->where('branch_id', $request->branch_id))
+            ->when($request->status,     fn($q) => $q->where('status', $request->status))
             ->when(
                 ! $user->isOwnerPusat() && ! $user->isRegionalLeader(),
-                fn ($q) => $q->where('branch_id', $user->branch_id)
+                fn($q) => $q->where('branch_id', $user->branch_id)
             )
             ->orderBy('due_date');
 
@@ -197,7 +206,7 @@ class ExportController extends Controller
         }
 
         $xlsx->addRow([]);
-        $xlsx->addRow(['', '', '', '', '', 'TOTAL BALANCE:', '', '', (float) $records->sum(fn ($r) => max(0, $r->amount - $r->paid_amount))]);
+        $xlsx->addRow(['', '', '', '', '', 'TOTAL BALANCE:', '', '', (float) $records->sum(fn($r) => max(0, $r->amount - $r->paid_amount))]);
 
         return $xlsx->download('receivables-' . now()->format('Y-m-d') . '.xlsx');
     }

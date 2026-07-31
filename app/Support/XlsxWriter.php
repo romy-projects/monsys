@@ -28,6 +28,15 @@ class XlsxWriter
         return $this;
     }
 
+    public function save(string $path): static
+    {
+        $built = $this->build();
+        copy($built, $path);
+        @unlink($built);
+
+        return $this;
+    }
+
     public function download(string $filename): \Symfony\Component\HttpFoundation\StreamedResponse
     {
         $path = $this->build();

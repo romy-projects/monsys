@@ -11,9 +11,18 @@ class Receivable extends Model
     use HasFactory;
 
     protected $fillable = [
-        'branch_id', 'buyer_name', 'buyer_type',
-        'invoice_number', 'invoice_date', 'due_date',
-        'amount', 'paid_amount', 'status', 'notes', 'created_by',
+        'branch_id',
+        'buyer_name',
+        'buyer_type',
+        'debtor_branch_id',
+        'invoice_number',
+        'invoice_date',
+        'due_date',
+        'amount',
+        'paid_amount',
+        'status',
+        'notes',
+        'created_by',
     ];
 
     protected $casts = [
@@ -26,6 +35,12 @@ class Receivable extends Model
     public function branch(): BelongsTo
     {
         return $this->belongsTo(Branch::class);
+    }
+
+    /** Debtor branch — set when buyer_type='branch' (piutang pangkalan/cabang lain). */
+    public function debtorBranch(): BelongsTo
+    {
+        return $this->belongsTo(Branch::class, 'debtor_branch_id');
     }
 
     public function createdBy(): BelongsTo
@@ -63,6 +78,6 @@ class Receivable extends Model
     {
         static::whereIn('status', ['outstanding', 'partial'])
             ->where('due_date', '<', today())
-            ->each(fn ($r) => $r->recalculateStatus());
+            ->each(fn($r) => $r->recalculateStatus());
     }
 }

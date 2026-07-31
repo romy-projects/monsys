@@ -21,9 +21,10 @@ class DeliveryOrderController extends Controller
             ->with(['originBranch', 'destinationBranch', 'expedition', 'vehicle']);
 
         if (! $user->isOwnerPusat() && ! $user->isRegionalLeader()) {
-            $query->where(fn ($q) => $q
-                ->where('origin_branch_id', $user->branch_id)
-                ->orWhere('destination_branch_id', $user->branch_id)
+            $query->where(
+                fn($q) => $q
+                    ->where('origin_branch_id', $user->branch_id)
+                    ->orWhere('destination_branch_id', $user->branch_id)
             );
         }
 
@@ -37,9 +38,10 @@ class DeliveryOrderController extends Controller
             $query->where('cylinder_type', $request->cylinder_type);
         }
         if ($request->filled('branch_id')) {
-            $query->where(fn ($q) => $q
-                ->where('origin_branch_id', $request->branch_id)
-                ->orWhere('destination_branch_id', $request->branch_id)
+            $query->where(
+                fn($q) => $q
+                    ->where('origin_branch_id', $request->branch_id)
+                    ->orWhere('destination_branch_id', $request->branch_id)
             );
         }
         if ($request->filled('from')) {
@@ -80,10 +82,10 @@ class DeliveryOrderController extends Controller
             'cylinder_type'          => ['required', 'in:3kg,5.5kg,12kg,50kg'],
             'quantity_ordered'       => ['required', 'integer', 'min:1'],
             'destination_branch_id'  => ['required', 'exists:branches,id'],
-            'origin_branch_id'       => ['nullable', 'exists:branches,id'],
             'supplier_name'          => ['nullable', 'string', 'max:200'],
             'expedition_id'          => ['nullable', 'exists:expeditions,id'],
             'vehicle_id'             => ['nullable', 'exists:vehicles,id'],
+            'transportir_name'       => ['nullable', 'string', 'max:200'],
             'container_number'       => ['nullable', 'string', 'max:100'],
             'eta'                    => ['nullable', 'date'],
             'notes'                  => ['nullable', 'string'],
@@ -92,8 +94,14 @@ class DeliveryOrderController extends Controller
         $data['requested_by'] = $user->id;
         $data['status']       = 'draft';
 
+        // Only Pusat/Regional users can set origin_branch_id; otherwise always Pusat
         if ($data['order_type'] === 'supplier') {
-            unset($data['origin_branch_id']);
+            $data['origin_branch_id'] = null;
+        } elseif ($user->isOwnerPusat() || $user->isRegionalLeader()) {
+            $data['origin_branch_id'] = $request->input('origin_branch_id', 1);
+        } else {
+            // Branch users can only request stock from Pusat
+            $data['origin_branch_id'] = 1;
         }
 
         $do = DeliveryOrder::create($data);
@@ -116,14 +124,19 @@ class DeliveryOrderController extends Controller
             'cylinder_type'         => ['sometimes', 'in:3kg,5.5kg,12kg,50kg'],
             'quantity_ordered'      => ['sometimes', 'integer', 'min:1'],
             'destination_branch_id' => ['sometimes', 'exists:branches,id'],
-            'origin_branch_id'      => ['nullable', 'exists:branches,id'],
             'supplier_name'         => ['nullable', 'string', 'max:200'],
             'expedition_id'         => ['nullable', 'exists:expeditions,id'],
             'vehicle_id'            => ['nullable', 'exists:vehicles,id'],
+            'transportir_name'      => ['nullable', 'string', 'max:200'],
             'container_number'      => ['nullable', 'string', 'max:100'],
             'eta'                   => ['nullable', 'date'],
             'notes'                 => ['nullable', 'string'],
         ]);
+
+        // Non-pusat users cannot change origin_branch_id
+        if ($user->isOwnerPusat() || $user->isRegionalLeader()) {
+            $data['origin_branch_id'] = $request->input('origin_branch_id', $deliveryOrder->origin_branch_id);
+        }
 
         $deliveryOrder->update($data);
 

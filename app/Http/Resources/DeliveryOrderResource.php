@@ -22,26 +22,28 @@ class DeliveryOrderResource extends JsonResource
             'eta'                => $this->eta?->toDateString(),
             'received_date'      => $this->received_date?->toDateString(),
             'status'             => $this->status,
+            'shipment_status'    => $this->shipment_status,
+            'transportir_name'   => $this->transportir_name,
             'notes'              => $this->notes,
             'approved_at'        => $this->approved_at?->toDateTimeString(),
-            'origin_branch'      => $this->whenLoaded('originBranch', fn () => $this->order_type === 'supplier'
+            'origin_branch'      => $this->whenLoaded('originBranch', fn() => $this->order_type === 'supplier'
                 ? ['id' => null, 'name' => $this->supplier_name ?? 'Supplier']
                 : ['id' => $this->originBranch?->id, 'name' => $this->originBranch?->name]),
-            'destination_branch' => $this->whenLoaded('destinationBranch', fn () => [
+            'destination_branch' => $this->whenLoaded('destinationBranch', fn() => [
                 'id'   => $this->destinationBranch?->id,
                 'name' => $this->destinationBranch?->name,
             ]),
-            'expedition'         => $this->whenLoaded('expedition', fn () => $this->expedition ? [
+            'expedition'         => $this->whenLoaded('expedition', fn() => $this->expedition ? [
                 'id'   => $this->expedition->id,
                 'name' => $this->expedition->name,
             ] : null),
-            'vehicle'            => $this->whenLoaded('vehicle', fn () => $this->vehicle ? [
+            'vehicle'            => $this->whenLoaded('vehicle', fn() => $this->vehicle ? [
                 'id'           => $this->vehicle->id,
                 'plate_number' => $this->vehicle->plate_number,
                 'driver_name'  => $this->vehicle->driver_name,
             ] : null),
-            'requested_by'       => $this->whenLoaded('requestedBy', fn () => $this->requestedBy?->name),
-            'approved_by'        => $this->whenLoaded('approvedBy', fn () => $this->approvedBy?->name),
+            'requested_by'       => $this->whenLoaded('requestedBy', fn() => $this->requestedBy?->name),
+            'approved_by'        => $this->whenLoaded('approvedBy', fn() => $this->approvedBy?->name),
             'created_at'         => $this->created_at?->toDateTimeString(),
         ];
     }

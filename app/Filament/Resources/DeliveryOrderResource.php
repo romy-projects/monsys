@@ -135,6 +135,14 @@ class DeliveryOrderResource extends Resource
                         ->nullable()
                         ->columnSpan(1),
 
+                    Forms\Components\TextInput::make('transportir_name')
+                        ->label('Transportir Name (ad-hoc)')
+                        ->placeholder('e.g. Tatik, Pak Tri, etc.')
+                        ->nullable()
+                        ->maxLength(255)
+                        ->helperText('For carriers not registered in Expedition master data')
+                        ->columnSpan(1),
+
                     Forms\Components\TextInput::make('container_number')
                         ->label('Container Number / No Kontainer')
                         ->nullable()
@@ -143,6 +151,17 @@ class DeliveryOrderResource extends Resource
                     Forms\Components\DatePicker::make('eta')
                         ->label('ETA (Estimated Time of Arrival)')
                         ->nullable()
+                        ->columnSpan(1),
+
+                    Forms\Components\Select::make('shipment_status')
+                        ->label('Shipment Status')
+                        ->options([
+                            'at_transportir_warehouse'  => 'Masih di Gudang Transportir',
+                            'delivered_to_destination'  => 'Terkirim',
+                        ])
+                        ->nullable()
+                        ->visible(fn(Forms\Get $get) => in_array($get('status'), ['in_transit', 'on_transportir']))
+                        ->live()
                         ->columnSpan(1),
                 ])->columns(2),
 

@@ -34,7 +34,7 @@
                     class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white">
             </div>
         </div>
-        <p class="mt-2 text-xs text-gray-400">Purchase price used = price effective on the "To" date per cylinder type.</p>
+        <p class="mt-2 text-xs text-gray-400">HPP is matched per sale date (price effective on each individual sale day).</p>
     </div>
 
     {{-- HPP Table --}}
@@ -52,7 +52,7 @@
                     <tr>
                         <th class="px-4 py-3 text-left text-xs font-semibold uppercase text-gray-500">Type</th>
                         <th class="px-4 py-3 text-right text-xs font-semibold uppercase text-gray-500">Qty Sold</th>
-                        <th class="px-4 py-3 text-right text-xs font-semibold uppercase text-gray-500">Purchase Price</th>
+                        <th class="px-4 py-3 text-right text-xs font-semibold uppercase text-gray-500">Price Start → End</th>
                         <th class="px-4 py-3 text-right text-xs font-semibold uppercase text-gray-500">Total HPP</th>
                         <th class="px-4 py-3 text-right text-xs font-semibold uppercase text-gray-500">Revenue</th>
                         <th class="px-4 py-3 text-right text-xs font-semibold uppercase text-gray-500">Gross Margin</th>
@@ -74,7 +74,16 @@
                             {{ $row['qty_sold'] > 0 ? number_format($row['qty_sold']) : '—' }}
                         </td>
                         <td class="px-4 py-3 text-right text-gray-500 dark:text-gray-400">
-                            {{ $row['has_price'] ? $fmt($row['purchase_price']) : '—' }}
+                            @if($row['has_price'])
+                                {{ $fmt($row['purchase_price_start']) }}
+                                @if($row['purchase_price_start'] !== $row['purchase_price_end'])
+                                    → <span class="text-orange-500 font-semibold">{{ $fmt($row['purchase_price_end']) }}</span>
+                                @else
+                                    → {{ $fmt($row['purchase_price_end']) }}
+                                @endif
+                            @else
+                                —
+                            @endif
                         </td>
                         <td class="px-4 py-3 text-right text-red-600 dark:text-red-400 font-medium">
                             {{ $row['total_hpp'] > 0 ? $fmt($row['total_hpp']) : '—' }}
@@ -130,8 +139,8 @@
     <div class="flex flex-wrap gap-4 text-xs text-gray-500 dark:text-gray-400">
         <span><span class="inline-block w-3 h-3 rounded-full bg-green-500 mr-1"></span>Margin ≥ 20% — healthy</span>
         <span><span class="inline-block w-3 h-3 rounded-full bg-yellow-400 mr-1"></span>Margin 10–19% — watch</span>
-        <span><span class="inline-block w-3 h-3 rounded-full bg-red-500 mr-1"></span>Margin &lt; 10% — critical</span>
-        <span class="ml-2">HPP = qty sold × purchase price at period end date</span>
+        <span><span class="inline-block w-3 h-3 rounded-full bg-red-500 mr-1"></span>Margin < 10% — critical</span>
+        <span class="ml-2">✅ HPP matched per sale date (effective price on each sale day)</span>
     </div>
 
 </div>
