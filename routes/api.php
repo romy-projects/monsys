@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\DeliveryOrderController;
 use App\Http\Controllers\Api\DeviceController;
 use App\Http\Controllers\Api\InvoiceController;
 use App\Http\Controllers\Api\MasterDataController;
+use App\Http\Controllers\Api\CylinderCirculationController;
 use App\Http\Controllers\Api\PayableController;
 use App\Http\Controllers\Api\ReportController;
 use App\Http\Controllers\Api\SalesController;
@@ -111,6 +112,14 @@ Route::group([], function () {
         Route::put('payables/{payable}', [PayableController::class, 'update']);
         Route::delete('payables/{payable}', [PayableController::class, 'destroy']);
         Route::post('payables/{payable}/pay', [PayableController::class, 'pay']);
+
+        // Cylinder Circulation
+        Route::get('cylinder-circulations', [CylinderCirculationController::class, 'index']);
+        Route::post('cylinder-circulations', [CylinderCirculationController::class, 'store']);
+        Route::get('cylinder-circulations/{cylinderCirculation}', [CylinderCirculationController::class, 'show']);
+        Route::put('cylinder-circulations/{cylinderCirculation}', [CylinderCirculationController::class, 'update']);
+        Route::delete('cylinder-circulations/{cylinderCirculation}', [CylinderCirculationController::class, 'destroy']);
+        Route::get('cylinder-circulations/summary', [CylinderCirculationController::class, 'summary']);
 
         // Device Tokens
         Route::post('device/token', [DeviceController::class, 'registerToken']);

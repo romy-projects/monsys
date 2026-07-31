@@ -63,6 +63,9 @@ class AdminPanelProvider extends PanelProvider
                 NavigationGroup::make()
                     ->label(fn() => __('nav.group.reports'))
                     ->icon('heroicon-o-document-text'),
+                NavigationGroup::make()
+                    ->label('Tabung Sirkulasi')
+                    ->icon('heroicon-o-arrow-path'),
             ])
             ->databaseNotifications()
             ->databaseNotificationsPolling('60s')
