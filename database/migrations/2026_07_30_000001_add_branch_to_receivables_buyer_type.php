@@ -10,7 +10,10 @@ return new class extends Migration
     public function up(): void
     {
         // Add 'branch' to buyer_type enum (MySQL requires DB::statement for enum modification)
-        DB::statement("ALTER TABLE receivables MODIFY COLUMN buyer_type ENUM('retail','agen','industri','branch') NOT NULL DEFAULT 'retail'");
+        // SQLite: no-op — SQLite doesn't enforce enum constraints, so the value is already accepted
+        if (DB::getDriverName() === 'mysql') {
+            DB::statement("ALTER TABLE receivables MODIFY COLUMN buyer_type ENUM('retail','agen','industri','branch') NOT NULL DEFAULT 'retail'");
+        }
 
         // Add debtor_branch_id FK for piutang pangkalan/cabang lain
         Schema::table('receivables', function (Blueprint $table) {
@@ -27,6 +30,8 @@ return new class extends Migration
             $table->dropColumn('debtor_branch_id');
         });
 
-        DB::statement("ALTER TABLE receivables MODIFY COLUMN buyer_type ENUM('retail','agen','industri') NOT NULL DEFAULT 'retail'");
+        if (DB::getDriverName() === 'mysql') {
+            DB::statement("ALTER TABLE receivables MODIFY COLUMN buyer_type ENUM('retail','agen','industri') NOT NULL DEFAULT 'retail'");
+        }
     }
 };

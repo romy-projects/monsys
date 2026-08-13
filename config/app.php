@@ -123,4 +123,19 @@ return [
         'store' => env('APP_MAINTENANCE_STORE', 'database'),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Branch Shipment Tracking
+    |--------------------------------------------------------------------------
+    |
+    | When true, Other Branch users (owner_cabang, staff_gudang) can access
+    | the Shipment Tracking page in the Filament panel, scoped to their own
+    | branch. When false (default), only Pusat/Regional can access it.
+    |
+    | Toggle this to grant/revoke branch shipment visibility without code changes.
+    |
+    */
+
+    'branch_shipment_tracking' => env('BRANCH_SHIPMENT_TRACKING', false),
+
 ];

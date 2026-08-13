@@ -4,6 +4,9 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CostController;
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\DeliveryOrderController;
+use App\Http\Controllers\Api\LoadingOrderController;
+use App\Http\Controllers\Api\PurchaseOrderController;
+use App\Http\Controllers\Api\SalesOrderController;
 use App\Http\Controllers\Api\DeviceController;
 use App\Http\Controllers\Api\InvoiceController;
 use App\Http\Controllers\Api\MasterDataController;
@@ -54,6 +57,27 @@ Route::group([], function () {
         Route::post('delivery-orders/{deliveryOrder}/mark-in-transit', [DeliveryOrderController::class, 'markInTransit']);
         Route::post('delivery-orders/{deliveryOrder}/receive', [DeliveryOrderController::class, 'receive']);
         Route::post('delivery-orders/{deliveryOrder}/cancel', [DeliveryOrderController::class, 'cancel']);
+
+        // Sales Orders (SO) — Main Branch to Pertamina
+        Route::apiResource('sales-orders', SalesOrderController::class);
+        Route::post('sales-orders/{deliveryOrder}/submit', [SalesOrderController::class, 'submit']);
+        Route::post('sales-orders/{deliveryOrder}/approve', [SalesOrderController::class, 'approve']);
+        Route::post('sales-orders/{deliveryOrder}/cancel', [SalesOrderController::class, 'cancel']);
+
+        // Loading Orders (LO) — Main Branch loading instructions to Transportir
+        Route::apiResource('loading-orders', LoadingOrderController::class);
+        Route::post('loading-orders/{deliveryOrder}/submit', [LoadingOrderController::class, 'submit']);
+        Route::post('loading-orders/{deliveryOrder}/approve', [LoadingOrderController::class, 'approve']);
+        Route::post('loading-orders/{deliveryOrder}/mark-loaded', [LoadingOrderController::class, 'markLoaded']);
+        Route::post('loading-orders/{deliveryOrder}/cancel', [LoadingOrderController::class, 'cancel']);
+
+        // Purchase Orders (PO) — Other Branches to Main Branch
+        Route::apiResource('purchase-orders', PurchaseOrderController::class);
+        Route::post('purchase-orders/{deliveryOrder}/submit', [PurchaseOrderController::class, 'submit']);
+        Route::post('purchase-orders/{deliveryOrder}/approve', [PurchaseOrderController::class, 'approve']);
+        Route::post('purchase-orders/{deliveryOrder}/mark-in-transit', [PurchaseOrderController::class, 'markInTransit']);
+        Route::post('purchase-orders/{deliveryOrder}/receive', [PurchaseOrderController::class, 'receive']);
+        Route::post('purchase-orders/{deliveryOrder}/cancel', [PurchaseOrderController::class, 'cancel']);
 
         // Sales
         Route::apiResource('sales', SalesController::class);

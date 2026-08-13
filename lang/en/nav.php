@@ -30,6 +30,9 @@ return [
         'do_approval'  => 'DO Approvals',
         'do_tracking'  => 'Shipment Tracking',
         'do_history'   => 'DO History',
+        'so_request'   => 'Sales Order (SO)',
+        'lo_request'   => 'Loading Order (LO)',
+        'po_request'   => 'Purchase Order (PO)',
 
         // Sales
         'sales_input'   => 'Daily Sales Input',
@@ -56,7 +59,7 @@ return [
         // Reports
         'report_export'      => 'Export Excel',
         'report_audit'       => 'Stock Audit',
-        'report_consolidated'=> 'Consolidated P&L',
+        'report_consolidated' => 'Consolidated P&L',
         'notification_log'   => 'Notification Log',
     ],
 ];

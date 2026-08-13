@@ -29,6 +29,9 @@ return [
         'do_approval'  => 'Persetujuan DO',
         'do_tracking'  => 'Lacak Kiriman',
         'do_history'   => 'Histori DO',
+        'so_request'   => 'Sales Order (SO)',
+        'lo_request'   => 'Loading Order (LO)',
+        'po_request'   => 'Purchase Order (PO)',
 
         // Penjualan
         'sales_input'   => 'Input Penjualan Harian',

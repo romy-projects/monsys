@@ -2,6 +2,7 @@
 
 namespace App\Observers;
 
+use App\Models\Branch;
 use App\Models\DeliveryOrder;
 use App\Models\StockItem;
 use App\Models\StockMutation;
@@ -26,11 +27,93 @@ class DeliveryOrderObserver
 
         match ($do->status) {
             'pending_approval' => $this->notifyPendingApproval($do),
-            'approved'         => $this->notifyApproved($do),
+            'approved'         => $this->handleApproved($do),
             'on_transportir'   => $this->notifyOnTransportir($do),
             'delivered'        => $this->handleDelivered($do),
             default            => null,
         };
+    }
+
+    private function handleApproved(DeliveryOrder $do): void
+    {
+        $this->notifyApproved($do);
+
+        // T7-17: SO approved → auto-create DO
+        if ($do->document_type === 'so') {
+            $this->createDeliveryOrderFromSo($do);
+        }
+
+        // T7-18: PO approved → auto-create DO for fulfillment
+        if ($do->document_type === 'po') {
+            $this->createDeliveryOrderFromPo($do);
+        }
+    }
+
+    /**
+     * T7-17: When an SO is approved, auto-create a DO to Pertamina.
+     */
+    private function createDeliveryOrderFromSo(DeliveryOrder $so): void
+    {
+        $mainBranch = Branch::mainBranch()->first();
+
+        $year  = date('Y');
+        $count = DeliveryOrder::deliveryOrders()->whereYear('created_at', $year)->count() + 1;
+        $doNumber = 'DO' . $year . '-' . str_pad($count, 3, '0', STR_PAD_LEFT);
+
+        DeliveryOrder::create([
+            'do_number'          => $doNumber,
+            'document_type'      => 'do',
+            'counterparty_type'  => 'pertamina',
+            'counterparty_name'  => $so->counterparty_name ?: 'Pertamina',
+            'so_number'          => $so->do_number,
+            'order_type'         => 'supplier',
+            'origin_branch_id'   => $mainBranch?->id,
+            'cylinder_type'      => $so->cylinder_type,
+            'quantity_ordered'   => $so->quantity_ordered,
+            'order_date'         => $so->order_date,
+            'eta'                => $so->eta,
+            'expedition_id'      => $so->expedition_id,
+            'vehicle_id'         => $so->vehicle_id,
+            'transportir_name'   => $so->transportir_name,
+            'container_number'   => $so->container_number,
+            'notes'              => "Auto-created from SO #{$so->do_number}",
+            'requested_by'       => $so->requested_by,
+            'status'             => 'draft',
+        ]);
+    }
+
+    /**
+     * T7-18: When a PO is approved, auto-create a DO for fulfillment.
+     */
+    private function createDeliveryOrderFromPo(DeliveryOrder $po): void
+    {
+        $mainBranch = Branch::mainBranch()->first();
+
+        $year  = date('Y');
+        $count = DeliveryOrder::deliveryOrders()->whereYear('created_at', $year)->count() + 1;
+        $doNumber = 'DO' . $year . '-' . str_pad($count, 3, '0', STR_PAD_LEFT);
+
+        DeliveryOrder::create([
+            'do_number'          => $doNumber,
+            'document_type'      => 'do',
+            'counterparty_type'  => 'branch',
+            'counterparty_name'  => $po->counterparty_name ?: $po->destinationBranch?->name,
+            'po_number'          => $po->do_number,
+            'order_type'         => 'inter_branch',
+            'origin_branch_id'   => $mainBranch?->id,
+            'destination_branch_id' => $po->destination_branch_id,
+            'cylinder_type'      => $po->cylinder_type,
+            'quantity_ordered'   => $po->quantity_ordered,
+            'order_date'         => $po->order_date,
+            'eta'                => $po->eta,
+            'expedition_id'      => $po->expedition_id,
+            'vehicle_id'         => $po->vehicle_id,
+            'transportir_name'   => $po->transportir_name,
+            'container_number'   => $po->container_number,
+            'notes'              => "Auto-created from PO #{$po->do_number}",
+            'requested_by'       => $po->requested_by,
+            'status'             => 'draft',
+        ]);
     }
 
     private function notifyPendingApproval(DeliveryOrder $do): void
@@ -43,9 +126,11 @@ class DeliveryOrderObserver
             return;
         }
 
+        $docLabel = $do->document_type_label;
+
         Notification::make()
-            ->title('📋 DO Pending Approval')
-            ->body("DO #{$do->do_number} from {$do->destinationBranch?->name} requires approval. " . number_format($do->quantity_ordered) . " pcs of {$do->cylinder_type}.")
+            ->title("📋 {$docLabel} Pending Approval")
+            ->body("{$docLabel} #{$do->do_number} from {$do->destinationBranch?->name} requires approval. " . number_format($do->quantity_ordered) . " pcs of {$do->cylinder_type}.")
             ->warning()
             ->sendToDatabase($recipients);
     }
@@ -62,9 +147,11 @@ class DeliveryOrderObserver
             return;
         }
 
+        $docLabel = $do->document_type_label;
+
         Notification::make()
-            ->title('✅ DO Approved — Stock in Transit')
-            ->body("DO #{$do->do_number} for {$do->cylinder_type} ({$do->quantity_ordered} pcs) has been approved. Expect delivery soon.")
+            ->title("✅ {$docLabel} Approved — Stock in Transit")
+            ->body("{$docLabel} #{$do->do_number} for {$do->cylinder_type} ({$do->quantity_ordered} pcs) has been approved. Expect delivery soon.")
             ->success()
             ->sendToDatabase($recipients);
     }

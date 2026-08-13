@@ -10,7 +10,15 @@ return new class extends Migration
     public function up(): void
     {
         // Add shipment_status enum column
-        DB::statement("ALTER TABLE delivery_orders ADD COLUMN shipment_status ENUM('at_transportir_warehouse','delivered_to_destination') NULL AFTER status");
+        // MySQL: use ALTER TABLE with AFTER clause
+        // SQLite: use Schema::table instead (SQLite doesn't support ENUM or AFTER)
+        if (DB::getDriverName() === 'mysql') {
+            DB::statement("ALTER TABLE delivery_orders ADD COLUMN shipment_status ENUM('at_transportir_warehouse','delivered_to_destination') NULL AFTER status");
+        } else {
+            Schema::table('delivery_orders', function (Blueprint $table) {
+                $table->string('shipment_status', 30)->nullable()->after('status');
+            });
+        }
 
         // Add transportir_name free-text column
         Schema::table('delivery_orders', function (Blueprint $table) {
@@ -25,6 +33,12 @@ return new class extends Migration
             $table->dropColumn('transportir_name');
         });
 
-        DB::statement("ALTER TABLE delivery_orders DROP COLUMN shipment_status");
+        if (DB::getDriverName() === 'mysql') {
+            DB::statement("ALTER TABLE delivery_orders DROP COLUMN shipment_status");
+        } else {
+            Schema::table('delivery_orders', function (Blueprint $table) {
+                $table->dropColumn('shipment_status');
+            });
+        }
     }
 };

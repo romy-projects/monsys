@@ -77,6 +77,16 @@ class ShipmentTracking extends Page
 
     public static function canAccess(): bool
     {
-        return auth()->check();
+        $user = auth()->user();
+
+        if (! $user) return false;
+
+        // Pusat/Regional always have access
+        if ($user->isOwnerPusat() || $user->isRegionalLeader()) {
+            return true;
+        }
+
+        // Other branches: only if the admin has enabled it via config
+        return (bool) config('app.branch_shipment_tracking', false);
     }
 }

@@ -104,6 +104,30 @@ class User extends Authenticatable implements FilamentUser
         return in_array($this->role, ['owner_pusat', 'regional_leader']);
     }
 
+    /**
+     * Check if user can create Sales Orders (SO) — Main Branch only.
+     */
+    public function canCreateSalesOrder(): bool
+    {
+        return $this->isOwnerPusat() || $this->isRegionalLeader();
+    }
+
+    /**
+     * Check if user can create Loading Orders (LO) — Main Branch only.
+     */
+    public function canCreateLoadingOrder(): bool
+    {
+        return $this->isOwnerPusat() || $this->isRegionalLeader();
+    }
+
+    /**
+     * Check if user can create Purchase Orders (PO) — Other Branches only.
+     */
+    public function canCreatePurchaseOrder(): bool
+    {
+        return ! $this->isOwnerPusat() && ! $this->isRegionalLeader();
+    }
+
     // =========================================================
     // Relationships
     // =========================================================
