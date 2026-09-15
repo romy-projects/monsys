@@ -24,7 +24,7 @@ class DeliveryOrderController extends Controller
         }
 
         $query = DeliveryOrder::query()
-            ->with(['originBranch', 'destinationBranch', 'expedition', 'vehicle']);
+            ->with(['originBranch', 'destinationBranch', 'transportir', 'expedition', 'vehicle']);
 
         // Default: only show actual DOs (not SO/LO/PO) unless document_type is specified
         if ($request->filled('document_type')) {
@@ -65,7 +65,7 @@ class DeliveryOrderController extends Controller
         $this->authorizeView($user, $deliveryOrder);
 
         return $this->success(
-            new DeliveryOrderResource($deliveryOrder->load('originBranch', 'destinationBranch', 'expedition', 'vehicle', 'requestedBy', 'approvedBy'))
+            new DeliveryOrderResource($deliveryOrder->load('originBranch', 'destinationBranch', 'transportir', 'expedition', 'vehicle', 'requestedBy', 'approvedBy'))
         );
     }
 
@@ -88,6 +88,7 @@ class DeliveryOrderController extends Controller
             'quantity_ordered'       => ['required', 'integer', 'min:1'],
             'destination_branch_id'  => ['required', 'exists:branches,id'],
             'supplier_name'          => ['nullable', 'string', 'max:200'],
+            'transportir_id'         => ['nullable', 'exists:transportirs,id'],
             'expedition_id'          => ['nullable', 'exists:expeditions,id'],
             'vehicle_id'             => ['nullable', 'exists:vehicles,id'],
             'transportir_name'       => ['nullable', 'string', 'max:200'],
@@ -117,7 +118,7 @@ class DeliveryOrderController extends Controller
         $do = DeliveryOrder::create($data);
 
         return $this->created(
-            new DeliveryOrderResource($do->load('originBranch', 'destinationBranch', 'expedition', 'vehicle'))
+            new DeliveryOrderResource($do->load('originBranch', 'destinationBranch', 'transportir', 'expedition', 'vehicle'))
         );
     }
 
@@ -135,6 +136,7 @@ class DeliveryOrderController extends Controller
             'quantity_ordered'      => ['sometimes', 'integer', 'min:1'],
             'destination_branch_id' => ['sometimes', 'exists:branches,id'],
             'supplier_name'         => ['nullable', 'string', 'max:200'],
+            'transportir_id'        => ['nullable', 'exists:transportirs,id'],
             'expedition_id'         => ['nullable', 'exists:expeditions,id'],
             'vehicle_id'            => ['nullable', 'exists:vehicles,id'],
             'transportir_name'      => ['nullable', 'string', 'max:200'],
@@ -154,7 +156,7 @@ class DeliveryOrderController extends Controller
 
         $deliveryOrder->update($data);
 
-        return $this->success(new DeliveryOrderResource($deliveryOrder->fresh()->load('originBranch', 'destinationBranch', 'expedition', 'vehicle')));
+        return $this->success(new DeliveryOrderResource($deliveryOrder->fresh()->load('originBranch', 'destinationBranch', 'transportir', 'expedition', 'vehicle')));
     }
 
     // ── Workflow Actions ──────────────────────────────────────

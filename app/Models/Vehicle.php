@@ -12,7 +12,7 @@ class Vehicle extends Model
     use HasFactory;
 
     protected $fillable = [
-        'expedition_id',
+        'transportir_id',
         'plate_number',
         'type',
         'driver_name',
@@ -26,9 +26,9 @@ class Vehicle extends Model
         'capacity_kg' => 'decimal:2',
     ];
 
-    public function expedition(): BelongsTo
+    public function transportir(): BelongsTo
     {
-        return $this->belongsTo(Expedition::class);
+        return $this->belongsTo(Transportir::class);
     }
 
     public function deliveryOrders(): HasMany

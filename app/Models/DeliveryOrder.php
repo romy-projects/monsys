@@ -24,6 +24,7 @@ class DeliveryOrder extends Model
         'supplier_name',
         'origin_branch_id',
         'destination_branch_id',
+        'transportir_id',
         'expedition_id',
         'vehicle_id',
         'transportir_name',
@@ -105,6 +106,12 @@ class DeliveryOrder extends Model
             ->where('document_type', 'do');
     }
 
+    public function transportir(): BelongsTo
+    {
+        return $this->belongsTo(Transportir::class);
+    }
+
+    /** Branch-shipping expedition (the one that ships Tabung INTO the Branch). */
     public function expedition(): BelongsTo
     {
         return $this->belongsTo(Expedition::class);

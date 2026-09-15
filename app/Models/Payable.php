@@ -11,7 +11,7 @@ class Payable extends Model
     use HasFactory;
 
     protected $fillable = [
-        'expedition_id',
+        'transportir_id',
         'delivery_order_id',
         'invoice_number',
         'description',
@@ -29,9 +29,9 @@ class Payable extends Model
         'paid_at'     => 'datetime',
     ];
 
-    public function expedition(): BelongsTo
+    public function transportir(): BelongsTo
     {
-        return $this->belongsTo(Expedition::class);
+        return $this->belongsTo(Transportir::class);
     }
 
     public function deliveryOrder(): BelongsTo

@@ -193,7 +193,9 @@ class VehicleResource extends Resource
 
     public static function canAccess(): bool
     {
-        return auth()->check();
+        // Phase 9: Vehicle & Driver module hidden from all users.
+        // Re-enable later by returning `auth()->check()` instead of `false`.
+        return false;
     }
 
     public static function canCreate(): bool

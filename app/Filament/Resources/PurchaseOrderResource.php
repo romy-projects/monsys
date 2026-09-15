@@ -6,6 +6,7 @@ use App\Filament\Resources\PurchaseOrderResource\Pages;
 use App\Models\Branch;
 use App\Models\DeliveryOrder;
 use App\Models\Expedition;
+use App\Models\Transportir;
 use App\Models\Vehicle;
 use Filament\Forms;
 use Filament\Forms\Form;
@@ -135,6 +136,13 @@ class PurchaseOrderResource extends Resource
                         ->required()
                         ->columnSpan(1),
 
+                    Forms\Components\Select::make('transportir_id')
+                        ->label('Transportir')
+                        ->options(Transportir::where('status', 'active')->orderBy('name')->pluck('name', 'id'))
+                        ->searchable()
+                        ->nullable()
+                        ->columnSpan(1),
+
                     Forms\Components\Select::make('expedition_id')
                         ->label('Expedition / Ekspedisi')
                         ->options(Expedition::where('status', 'active')->pluck('name', 'id'))
@@ -142,17 +150,19 @@ class PurchaseOrderResource extends Resource
                         ->nullable()
                         ->columnSpan(1),
 
-                    Forms\Components\Select::make('vehicle_id')
-                        ->label('Vehicle / Kendaraan')
-                        ->options(
-                            Vehicle::active()
-                                ->orderBy('plate_number')
-                                ->get()
-                                ->mapWithKeys(fn($v) => [$v->id => $v->plate_number . ' — ' . $v->driver_name . ($v->expedition ? ' (' . $v->expedition->name . ')' : '')])
-                        )
-                        ->searchable()
-                        ->nullable()
-                        ->columnSpan(1),
+                    // Phase 9: Vehicle & Driver input hidden (not mandatory on PO).
+                    // Re-enable by uncommenting the block below.
+                    // Forms\Components\Select::make('vehicle_id')
+                    //     ->label('Vehicle / Kendaraan')
+                    //     ->options(
+                    //         Vehicle::active()
+                    //             ->orderBy('plate_number')
+                    //             ->get()
+                    //             ->mapWithKeys(fn($v) => [$v->id => $v->plate_number . ' — ' . $v->driver_name . ($v->expedition ? ' (' . $v->expedition->name . ')' : '')])
+                    //     )
+                    //     ->searchable()
+                    //     ->nullable()
+                    //     ->columnSpan(1),
 
                     Forms\Components\TextInput::make('transportir_name')
                         ->label('Transportir Name (ad-hoc)')

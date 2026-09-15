@@ -3,8 +3,8 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\PayableResource\Pages;
-use App\Models\Expedition;
 use App\Models\Payable;
+use App\Models\Transportir;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
@@ -41,9 +41,9 @@ class PayableResource extends Resource
         return $form->schema([
             Forms\Components\Section::make('Payable Details')
                 ->schema([
-                    Forms\Components\Select::make('expedition_id')
-                        ->label('Transportir / Expedition')
-                        ->options(Expedition::where('status', 'active')->orderBy('name')->pluck('name', 'id'))
+                    Forms\Components\Select::make('transportir_id')
+                        ->label('Transportir')
+                        ->options(Transportir::where('status', 'active')->orderBy('name')->pluck('name', 'id'))
                         ->searchable()
                         ->required()
                         ->live()
@@ -52,12 +52,12 @@ class PayableResource extends Resource
                     Forms\Components\Select::make('delivery_order_id')
                         ->label('Delivery Order (optional)')
                         ->options(function (Forms\Get $get) {
-                            $expeditionId = $get('expedition_id');
-                            if (! $expeditionId) {
+                            $transportirId = $get('transportir_id');
+                            if (! $transportirId) {
                                 return [];
                             }
 
-                            return \App\Models\DeliveryOrder::where('expedition_id', $expeditionId)
+                            return \App\Models\DeliveryOrder::where('transportir_id', $transportirId)
                                 ->orderBy('do_number')
                                 ->get()
                                 ->mapWithKeys(fn($do) => [$do->id => $do->do_number . ' — ' . $do->cylinder_type . ' (' . number_format($do->quantity_ordered) . ' pcs)']);
@@ -115,7 +115,7 @@ class PayableResource extends Resource
 
         return $table
             ->columns([
-                Tables\Columns\TextColumn::make('expedition.name')
+                Tables\Columns\TextColumn::make('transportir.name')
                     ->label('Transportir')
                     ->searchable()
                     ->sortable(),
@@ -173,9 +173,9 @@ class PayableResource extends Resource
                         'paid'    => 'Lunas',
                     ]),
 
-                Tables\Filters\SelectFilter::make('expedition_id')
+                Tables\Filters\SelectFilter::make('transportir_id')
                     ->label('Transportir')
-                    ->options(Expedition::where('status', 'active')->orderBy('name')->pluck('name', 'id')),
+                    ->options(Transportir::where('status', 'active')->orderBy('name')->pluck('name', 'id')),
             ])
             ->actions([
                 Tables\Actions\Action::make('mark_as_paid')

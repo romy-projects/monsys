@@ -21,7 +21,7 @@ class LoadingOrderController extends Controller
     {
         $user  = $request->user();
         $query = DeliveryOrder::loadingOrders()
-            ->with(['originBranch', 'destinationBranch', 'expedition', 'vehicle', 'loadedBy']);
+            ->with(['originBranch', 'destinationBranch', 'transportir', 'expedition', 'vehicle', 'loadedBy']);
 
         if (! $user->isOwnerPusat() && ! $user->isRegionalLeader()) {
             $query->where('origin_branch_id', $user->branch_id);
@@ -52,7 +52,7 @@ class LoadingOrderController extends Controller
         $this->authorizeView($user, $deliveryOrder);
 
         return $this->success(
-            new DeliveryOrderResource($deliveryOrder->load('originBranch', 'destinationBranch', 'expedition', 'vehicle', 'loadedBy', 'requestedBy', 'approvedBy'))
+            new DeliveryOrderResource($deliveryOrder->load('originBranch', 'destinationBranch', 'transportir', 'expedition', 'vehicle', 'loadedBy', 'requestedBy', 'approvedBy'))
         );
     }
 
@@ -76,6 +76,7 @@ class LoadingOrderController extends Controller
             'quantity_ordered'  => ['required', 'integer', 'min:1'],
             'so_number'         => ['nullable', 'string', 'max:100'],
             'counterparty_name' => ['nullable', 'string', 'max:200'],
+            'transportir_id'    => ['nullable', 'exists:transportirs,id'],
             'expedition_id'     => ['nullable', 'exists:expeditions,id'],
             'vehicle_id'        => ['nullable', 'exists:vehicles,id'],
             'transportir_name'  => ['nullable', 'string', 'max:200'],
@@ -95,7 +96,7 @@ class LoadingOrderController extends Controller
         $lo = DeliveryOrder::create($data);
 
         return $this->created(
-            new DeliveryOrderResource($lo->load('originBranch', 'destinationBranch', 'expedition', 'vehicle'))
+            new DeliveryOrderResource($lo->load('originBranch', 'destinationBranch', 'transportir', 'expedition', 'vehicle'))
         );
     }
 
@@ -118,6 +119,7 @@ class LoadingOrderController extends Controller
             'quantity_ordered'  => ['sometimes', 'integer', 'min:1'],
             'so_number'         => ['nullable', 'string', 'max:100'],
             'counterparty_name' => ['nullable', 'string', 'max:200'],
+            'transportir_id'    => ['nullable', 'exists:transportirs,id'],
             'expedition_id'     => ['nullable', 'exists:expeditions,id'],
             'vehicle_id'        => ['nullable', 'exists:vehicles,id'],
             'transportir_name'  => ['nullable', 'string', 'max:200'],
@@ -129,7 +131,7 @@ class LoadingOrderController extends Controller
 
         $deliveryOrder->update($data);
 
-        return $this->success(new DeliveryOrderResource($deliveryOrder->fresh()->load('originBranch', 'destinationBranch', 'expedition', 'vehicle')));
+        return $this->success(new DeliveryOrderResource($deliveryOrder->fresh()->load('originBranch', 'destinationBranch', 'transportir', 'expedition', 'vehicle')));
     }
 
     /**

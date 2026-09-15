@@ -11,10 +11,10 @@ class PayableResource extends JsonResource
     {
         return [
             'id'                => $this->id,
-            'expedition_id'     => $this->expedition_id,
-            'expedition'        => $this->whenLoaded('expedition', fn() => [
-                'id'   => $this->expedition->id,
-                'name' => $this->expedition->name,
+            'transportir_id'    => $this->transportir_id,
+            'transportir'       => $this->whenLoaded('transportir', fn() => [
+                'id'   => $this->transportir->id,
+                'name' => $this->transportir->name,
             ]),
             'delivery_order_id' => $this->delivery_order_id,
             'delivery_order'    => $this->whenLoaded('deliveryOrder', fn() => [

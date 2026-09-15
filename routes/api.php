@@ -95,6 +95,11 @@ Route::group([], function () {
         Route::put('expeditions/{expedition}', [MasterDataController::class, 'updateExpedition']);
         Route::delete('expeditions/{expedition}', [MasterDataController::class, 'destroyExpedition']);
 
+        Route::get('transportirs', [MasterDataController::class, 'transportirs']);
+        Route::post('transportirs', [MasterDataController::class, 'storeTransportir']);
+        Route::put('transportirs/{transportir}', [MasterDataController::class, 'updateTransportir']);
+        Route::delete('transportirs/{transportir}', [MasterDataController::class, 'destroyTransportir']);
+
         Route::get('prices', [MasterDataController::class, 'prices']);
         Route::get('prices/current', [MasterDataController::class, 'currentPrices']);
         Route::post('prices', [MasterDataController::class, 'storePrice']);

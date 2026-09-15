@@ -21,7 +21,7 @@ class SalesOrderController extends Controller
     {
         $user  = $request->user();
         $query = DeliveryOrder::salesOrders()
-            ->with(['originBranch', 'destinationBranch', 'expedition', 'vehicle']);
+            ->with(['originBranch', 'destinationBranch', 'transportir', 'expedition', 'vehicle']);
 
         if (! $user->isOwnerPusat() && ! $user->isRegionalLeader()) {
             $query->where('origin_branch_id', $user->branch_id);
@@ -52,7 +52,7 @@ class SalesOrderController extends Controller
         $this->authorizeView($user, $deliveryOrder);
 
         return $this->success(
-            new DeliveryOrderResource($deliveryOrder->load('originBranch', 'destinationBranch', 'expedition', 'vehicle', 'requestedBy', 'approvedBy'))
+            new DeliveryOrderResource($deliveryOrder->load('originBranch', 'destinationBranch', 'transportir', 'expedition', 'vehicle', 'requestedBy', 'approvedBy'))
         );
     }
 
@@ -75,6 +75,7 @@ class SalesOrderController extends Controller
             'cylinder_type'     => ['required', 'in:3kg,5.5kg,12kg,50kg'],
             'quantity_ordered'  => ['required', 'integer', 'min:1'],
             'counterparty_name' => ['nullable', 'string', 'max:200'],
+            'transportir_id'    => ['nullable', 'exists:transportirs,id'],
             'expedition_id'     => ['nullable', 'exists:expeditions,id'],
             'vehicle_id'        => ['nullable', 'exists:vehicles,id'],
             'transportir_name'  => ['nullable', 'string', 'max:200'],
@@ -93,7 +94,7 @@ class SalesOrderController extends Controller
         $so = DeliveryOrder::create($data);
 
         return $this->created(
-            new DeliveryOrderResource($so->load('originBranch', 'destinationBranch', 'expedition', 'vehicle'))
+            new DeliveryOrderResource($so->load('originBranch', 'destinationBranch', 'transportir', 'expedition', 'vehicle'))
         );
     }
 
@@ -115,6 +116,7 @@ class SalesOrderController extends Controller
             'cylinder_type'     => ['sometimes', 'in:3kg,5.5kg,12kg,50kg'],
             'quantity_ordered'  => ['sometimes', 'integer', 'min:1'],
             'counterparty_name' => ['nullable', 'string', 'max:200'],
+            'transportir_id'    => ['nullable', 'exists:transportirs,id'],
             'expedition_id'     => ['nullable', 'exists:expeditions,id'],
             'vehicle_id'        => ['nullable', 'exists:vehicles,id'],
             'transportir_name'  => ['nullable', 'string', 'max:200'],
@@ -125,7 +127,7 @@ class SalesOrderController extends Controller
 
         $deliveryOrder->update($data);
 
-        return $this->success(new DeliveryOrderResource($deliveryOrder->fresh()->load('originBranch', 'destinationBranch', 'expedition', 'vehicle')));
+        return $this->success(new DeliveryOrderResource($deliveryOrder->fresh()->load('originBranch', 'destinationBranch', 'transportir', 'expedition', 'vehicle')));
     }
 
     /**

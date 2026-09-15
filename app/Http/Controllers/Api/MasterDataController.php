@@ -7,6 +7,7 @@ use App\Http\Resources\BranchResource;
 use App\Http\Resources\CustomerResource;
 use App\Http\Resources\ExpeditionResource;
 use App\Http\Resources\LpgPriceResource;
+use App\Http\Resources\TransportirResource;
 use App\Http\Resources\UserResource;
 use App\Http\Resources\VehicleResource;
 use App\Http\Traits\ApiResponse;
@@ -14,6 +15,7 @@ use App\Models\Branch;
 use App\Models\Customer;
 use App\Models\Expedition;
 use App\Models\LpgPrice;
+use App\Models\Transportir;
 use App\Models\User;
 use App\Models\Vehicle;
 use Illuminate\Http\JsonResponse;
@@ -117,6 +119,51 @@ class MasterDataController extends Controller
         return $this->noContent();
     }
 
+    // ── Transportirs ──────────────────────────────────────────
+
+    public function transportirs(Request $request): JsonResponse
+    {
+        $transportirs = Transportir::where('status', 'active')->orderBy('name')->get();
+        return $this->success(TransportirResource::collection($transportirs));
+    }
+
+    public function storeTransportir(Request $request): JsonResponse
+    {
+        if (! $request->user()->isOwnerPusat()) return $this->forbidden();
+
+        $data = $request->validate([
+            'name'           => ['required', 'string', 'max:100'],
+            'code'           => ['nullable', 'string', 'max:20'],
+            'phone'          => ['nullable', 'string', 'max:20'],
+            'contact_person' => ['nullable', 'string', 'max:100'],
+        ]);
+
+        $data['status'] = 'active';
+        return $this->created(new TransportirResource(Transportir::create($data)));
+    }
+
+    public function updateTransportir(Transportir $transportir, Request $request): JsonResponse
+    {
+        if (! $request->user()->isOwnerPusat()) return $this->forbidden();
+
+        $data = $request->validate([
+            'name'           => ['sometimes', 'string', 'max:100'],
+            'phone'          => ['nullable', 'string', 'max:20'],
+            'contact_person' => ['nullable', 'string', 'max:100'],
+            'status'         => ['sometimes', 'in:active,inactive'],
+        ]);
+
+        $transportir->update($data);
+        return $this->success(new TransportirResource($transportir->fresh()));
+    }
+
+    public function destroyTransportir(Transportir $transportir, Request $request): JsonResponse
+    {
+        if (! $request->user()->isOwnerPusat()) return $this->forbidden();
+        $transportir->delete();
+        return $this->noContent();
+    }
+
     // ── LPG Prices ────────────────────────────────────────────
 
     public function prices(Request $request): JsonResponse
@@ -183,12 +230,12 @@ class MasterDataController extends Controller
     public function vehicles(Request $request): JsonResponse
     {
         $user  = $request->user();
-        $query = Vehicle::active()->with('expedition')->orderBy('plate_number');
+        $query = Vehicle::active()->with('transportir')->orderBy('plate_number');
 
         if (! $user->isOwnerPusat() && ! $user->isRegionalLeader()) {
-            $query->whereHas('expedition', fn($q) => $q->where('status', 'active'));
-        } elseif ($request->filled('expedition_id')) {
-            $query->where('expedition_id', $request->expedition_id);
+            $query->whereHas('transportir', fn($q) => $q->where('status', 'active'));
+        } elseif ($request->filled('transportir_id')) {
+            $query->where('transportir_id', $request->transportir_id);
         }
 
         return $this->success(VehicleResource::collection($query->get()));

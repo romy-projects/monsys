@@ -16,7 +16,7 @@ class PayableController extends Controller
     public function index(Request $request): JsonResponse
     {
         $user  = $request->user();
-        $query = Payable::query()->with('expedition');
+        $query = Payable::query()->with('transportir');
 
         // Branch-scoped: only owner_pusat and regional_leader see all; others see nothing (payables are pusat-level)
         if (! $user->canViewFinance()) {
@@ -26,8 +26,8 @@ class PayableController extends Controller
         if ($request->filled('status')) {
             $query->where('status', $request->status);
         }
-        if ($request->filled('expedition_id')) {
-            $query->where('expedition_id', $request->expedition_id);
+        if ($request->filled('transportir_id')) {
+            $query->where('transportir_id', $request->transportir_id);
         }
         if ($request->filled('from')) {
             $query->whereDate('created_at', '>=', $request->from);
@@ -46,7 +46,7 @@ class PayableController extends Controller
         }
 
         return $this->success(
-            new PayableResource($payable->load('expedition', 'deliveryOrder'))
+            new PayableResource($payable->load('transportir', 'deliveryOrder'))
         );
     }
 
@@ -57,7 +57,7 @@ class PayableController extends Controller
         }
 
         $data = $request->validate([
-            'expedition_id'     => ['required', 'exists:expeditions,id'],
+            'transportir_id'    => ['required', 'exists:transportirs,id'],
             'delivery_order_id' => ['nullable', 'exists:delivery_orders,id'],
             'invoice_number'    => ['nullable', 'string', 'max:100'],
             'description'       => ['required', 'string', 'max:255'],
@@ -73,7 +73,7 @@ class PayableController extends Controller
         $payable = Payable::create($data);
 
         return $this->created(
-            new PayableResource($payable->load('expedition'))
+            new PayableResource($payable->load('transportir'))
         );
     }
 
@@ -88,7 +88,7 @@ class PayableController extends Controller
         }
 
         $data = $request->validate([
-            'expedition_id'     => ['sometimes', 'exists:expeditions,id'],
+            'transportir_id'    => ['sometimes', 'exists:transportirs,id'],
             'delivery_order_id' => ['nullable', 'exists:delivery_orders,id'],
             'invoice_number'    => ['nullable', 'string', 'max:100'],
             'description'       => ['sometimes', 'string', 'max:255'],
@@ -101,7 +101,7 @@ class PayableController extends Controller
         $payable->update($data);
 
         return $this->success(
-            new PayableResource($payable->fresh()->load('expedition'))
+            new PayableResource($payable->fresh()->load('transportir'))
         );
     }
 
@@ -142,7 +142,7 @@ class PayableController extends Controller
         }
 
         return $this->success(
-            new PayableResource($payable->fresh()->load('expedition')),
+            new PayableResource($payable->fresh()->load('transportir')),
             'Payment recorded.'
         );
     }

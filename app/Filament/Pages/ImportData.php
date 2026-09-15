@@ -8,6 +8,7 @@ use App\Models\Expedition;
 use App\Models\LpgPrice;
 use App\Models\SalesTarget;
 use App\Models\StockItem;
+use App\Models\Transportir;
 use App\Models\User;
 use App\Models\Vehicle;
 use App\Support\XlsxReader;
@@ -51,6 +52,7 @@ class ImportData extends Page implements HasForms
         'customers'     => ['branch_code', 'name', 'type', 'phone', 'credit_limit'],
         'vehicles'      => ['branch_code', 'plate_number', 'driver_name', 'capacity_kg', 'status'],
         'expeditions'   => ['name', 'code', 'phone', 'address', 'status'],
+        'transportirs'  => ['name', 'code', 'phone', 'contact_person', 'status'],
         'lpg_prices'    => ['cylinder_type', 'purchase_price', 'selling_price', 'effective_date'],
         'stock_items'   => ['branch_code', 'cylinder_type', 'qty_full', 'qty_empty', 'qty_damaged'],
         'sales_targets' => ['branch_code', 'year', 'month', 'cylinder_type', 'target_qty', 'target_revenue'],
@@ -73,6 +75,7 @@ class ImportData extends Page implements HasForms
                 'customers'     => \App\Models\Customer::count(),
                 'vehicles'      => \App\Models\Vehicle::count(),
                 'expeditions'   => \App\Models\Expedition::count(),
+                'transportirs'  => \App\Models\Transportir::count(),
                 'lpg_prices'    => \App\Models\LpgPrice::count(),
                 'stock_items'   => \App\Models\StockItem::count(),
                 'sales_targets' => \App\Models\SalesTarget::count(),
@@ -97,6 +100,7 @@ class ImportData extends Page implements HasForms
             'customers'     => 'Customers / Pelanggan',
             'vehicles'      => 'Vehicles / Kendaraan',
             'expeditions'   => 'Expeditions / Ekspedisi',
+            'transportirs'  => 'Transportirs / Transportir',
             'lpg_prices'    => 'LPG Prices / Harga LPG',
             'stock_items'   => 'Stock Items / Stok',
             'sales_targets' => 'Sales Targets / Target Penjualan',
@@ -117,6 +121,7 @@ class ImportData extends Page implements HasForms
                             'customers'     => 'Customers / Pelanggan',
                             'vehicles'      => 'Vehicles / Kendaraan',
                             'expeditions'   => 'Expeditions / Ekspedisi',
+                            'transportirs'  => 'Transportirs / Transportir',
                             'lpg_prices'    => 'LPG Prices / Harga LPG',
                             'stock_items'   => 'Stock Items / Stok',
                             'sales_targets' => 'Sales Targets / Target Penjualan',
@@ -342,6 +347,10 @@ class ImportData extends Page implements HasForms
                 if (empty($row['name'])) $errors[] = ['row' => $rowNum, 'field' => 'name', 'message' => 'Expedition name is required.'];
                 break;
 
+            case 'transportirs':
+                if (empty($row['name'])) $errors[] = ['row' => $rowNum, 'field' => 'name', 'message' => 'Transportir name is required.'];
+                break;
+
             case 'lpg_prices':
                 if (empty($row['cylinder_type'])) $errors[] = ['row' => $rowNum, 'field' => 'cylinder_type', 'message' => 'Cylinder type is required.'];
                 if (! empty($row['cylinder_type']) && ! in_array($row['cylinder_type'], $this->enums['cylinder_type'])) {
@@ -436,6 +445,16 @@ class ImportData extends Page implements HasForms
                     'phone'   => $data['phone'] ?? null,
                     'address' => $data['address'] ?? null,
                     'status'  => $data['status'] ?? 'active',
+                ]);
+                break;
+
+            case 'transportirs':
+                Transportir::create([
+                    'name'           => $data['name'],
+                    'code'           => $data['code'] ?? null,
+                    'phone'          => $data['phone'] ?? null,
+                    'contact_person' => $data['contact_person'] ?? null,
+                    'status'         => $data['status'] ?? 'active',
                 ]);
                 break;
 
