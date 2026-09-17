@@ -7,12 +7,18 @@ use App\Http\Resources\DeliveryOrderResource;
 use App\Http\Traits\ApiResponse;
 use App\Models\Branch;
 use App\Models\DeliveryOrder;
+use App\Services\DocumentNumberService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class LoadingOrderController extends Controller
 {
     use ApiResponse;
+
+    public function __construct(private readonly DocumentNumberService $documentNumbers)
+    {
+    }
 
     /**
      * List Loading Orders (LO) — Main Branch loading instructions to Transportir.
@@ -70,7 +76,7 @@ class LoadingOrderController extends Controller
         $mainBranch = Branch::mainBranch()->first();
 
         $data = $request->validate([
-            'do_number'         => ['required', 'string', 'max:50', 'unique:delivery_orders,do_number'],
+            'do_number'         => ['nullable', 'string', 'max:50', 'unique:delivery_orders,do_number'],
             'order_date'        => ['required', 'date'],
             'cylinder_type'     => ['required', 'in:3kg,5.5kg,12kg,50kg'],
             'quantity_ordered'  => ['required', 'integer', 'min:1'],
@@ -93,7 +99,13 @@ class LoadingOrderController extends Controller
         $data['requested_by']      = $user->id;
         $data['status']            = 'draft';
 
-        $lo = DeliveryOrder::create($data);
+        // Allocate the LO number server-side when the client omits it (allocation + insert
+        // in one transaction so concurrent creates queue instead of colliding).
+        $lo = DB::transaction(function () use ($data) {
+            $data['do_number'] ??= $this->documentNumbers->next('lo');
+
+            return DeliveryOrder::create($data);
+        });
 
         return $this->created(
             new DeliveryOrderResource($lo->load('originBranch', 'destinationBranch', 'transportir', 'expedition', 'vehicle'))

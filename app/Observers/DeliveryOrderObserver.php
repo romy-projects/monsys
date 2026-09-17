@@ -7,10 +7,15 @@ use App\Models\DeliveryOrder;
 use App\Models\StockItem;
 use App\Models\StockMutation;
 use App\Models\User;
+use App\Services\DocumentNumberService;
 use Filament\Notifications\Notification;
 
 class DeliveryOrderObserver
 {
+    public function __construct(private readonly DocumentNumberService $documentNumbers)
+    {
+    }
+
     public function updated(DeliveryOrder $do): void
     {
         // Sync: shipment_status = delivered_to_destination → auto-transition do_status to delivered
@@ -56,9 +61,7 @@ class DeliveryOrderObserver
     {
         $mainBranch = Branch::mainBranch()->first();
 
-        $year  = date('Y');
-        $count = DeliveryOrder::deliveryOrders()->whereYear('created_at', $year)->count() + 1;
-        $doNumber = 'DO' . $year . '-' . str_pad($count, 3, '0', STR_PAD_LEFT);
+        $doNumber = $this->documentNumbers->next('do');
 
         DeliveryOrder::create([
             'do_number'          => $doNumber,
@@ -90,9 +93,7 @@ class DeliveryOrderObserver
     {
         $mainBranch = Branch::mainBranch()->first();
 
-        $year  = date('Y');
-        $count = DeliveryOrder::deliveryOrders()->whereYear('created_at', $year)->count() + 1;
-        $doNumber = 'DO' . $year . '-' . str_pad($count, 3, '0', STR_PAD_LEFT);
+        $doNumber = $this->documentNumbers->next('do');
 
         DeliveryOrder::create([
             'do_number'          => $doNumber,

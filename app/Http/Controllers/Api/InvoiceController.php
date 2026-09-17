@@ -5,13 +5,19 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Traits\ApiResponse;
 use App\Models\Invoice;
+use App\Services\DocumentNumberService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 
 class InvoiceController extends Controller
 {
     use ApiResponse;
+
+    public function __construct(private readonly DocumentNumberService $documentNumbers)
+    {
+    }
 
     public function index(Request $request): JsonResponse
     {
@@ -48,8 +54,17 @@ class InvoiceController extends Controller
         ]);
     }
 
+    /** Create a draft invoice. Number is allocated server-side. */
     public function store(Request $request): JsonResponse
     {
+        $user = $request->user();
+
+        // Non-approvers may only create invoices for their own branch.
+        if (! $user->isOwnerPusat() && ! $user->isRegionalLeader()
+            && (int) $request->input('branch_id') !== $user->branch_id) {
+            return $this->forbidden('You may only create invoices for your own branch.');
+        }
+
         $data = Validator::make($request->all(), [
             'branch_id'     => 'required|exists:branches,id',
             'customer_id'   => 'nullable|exists:customers,id',
@@ -61,14 +76,17 @@ class InvoiceController extends Controller
             'notes'         => 'nullable|string',
         ])->validated();
 
-        $year  = date('Y');
-        $count = Invoice::whereYear('created_at', $year)->count() + 1;
-        $data['invoice_number'] = 'INV' . $year . '-' . str_pad($count, 3, '0', STR_PAD_LEFT);
-        $data['total_amount']   = (int) $data['quantity'] * (float) $data['unit_price'];
-        $data['created_by']     = auth()->id();
-        $data['status']         = 'draft';
+        $data['total_amount'] = (int) $data['quantity'] * (float) $data['unit_price'];
+        $data['created_by']   = $user->id;
+        $data['status']       = 'draft';
 
-        $invoice = Invoice::create($data);
+        // Allocate INV<year>-NNN atomically instead of the racy count()+1 — invoice_number
+        // is uniquely indexed, so concurrent creates would collide.
+        $invoice = DB::transaction(function () use ($data) {
+            $data['invoice_number'] = $this->documentNumbers->next('inv');
+
+            return Invoice::create($data);
+        });
 
         return $this->created($invoice->fresh(['branch', 'customer']));
     }
@@ -156,6 +174,12 @@ class InvoiceController extends Controller
     /** Issue a draft invoice. */
     public function issue(Invoice $invoice): JsonResponse
     {
+        $user = auth()->user();
+
+        if (! $user->isOwnerPusat() && ! $user->isRegionalLeader() && $invoice->branch_id !== $user->branch_id) {
+            return $this->forbidden();
+        }
+
         if ($invoice->status !== 'draft') {
             return $this->error('Only draft invoices can be issued.', 422);
         }

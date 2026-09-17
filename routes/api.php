@@ -57,6 +57,9 @@ Route::group([], function () {
         Route::post('delivery-orders/{deliveryOrder}/mark-in-transit', [DeliveryOrderController::class, 'markInTransit']);
         Route::post('delivery-orders/{deliveryOrder}/receive', [DeliveryOrderController::class, 'receive']);
         Route::post('delivery-orders/{deliveryOrder}/cancel', [DeliveryOrderController::class, 'cancel']);
+        // Proof-of-delivery receipt. NOTE: only literal *GET* sub-paths must be declared before
+        // the apiResource above (they would be swallowed by show()); POST sub-paths are safe here.
+        Route::post('delivery-orders/{deliveryOrder}/receipt', [DeliveryOrderController::class, 'uploadReceipt']);
 
         // Sales Orders (SO) — Main Branch to Pertamina
         Route::apiResource('sales-orders', SalesOrderController::class);
@@ -143,12 +146,14 @@ Route::group([], function () {
         Route::post('payables/{payable}/pay', [PayableController::class, 'pay']);
 
         // Cylinder Circulation
+        // NOTE: 'summary' must be registered BEFORE the {cylinderCirculation}
+        // show route, otherwise GET /summary is swallowed by show() and 404s.
         Route::get('cylinder-circulations', [CylinderCirculationController::class, 'index']);
         Route::post('cylinder-circulations', [CylinderCirculationController::class, 'store']);
+        Route::get('cylinder-circulations/summary', [CylinderCirculationController::class, 'summary']);
         Route::get('cylinder-circulations/{cylinderCirculation}', [CylinderCirculationController::class, 'show']);
         Route::put('cylinder-circulations/{cylinderCirculation}', [CylinderCirculationController::class, 'update']);
         Route::delete('cylinder-circulations/{cylinderCirculation}', [CylinderCirculationController::class, 'destroy']);
-        Route::get('cylinder-circulations/summary', [CylinderCirculationController::class, 'summary']);
 
         // Device Tokens
         Route::post('device/token', [DeviceController::class, 'registerToken']);

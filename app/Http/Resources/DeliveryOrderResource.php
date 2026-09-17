@@ -31,6 +31,7 @@ class DeliveryOrderResource extends JsonResource
             'shipment_status'    => $this->shipment_status,
             'transportir_name'   => $this->transportir_name,
             'notes'              => $this->notes,
+            'receipt_url'        => $this->receipt_path ? asset('storage/' . $this->receipt_path) : null,
             'approved_at'        => $this->approved_at?->toDateTimeString(),
             'origin_branch'      => $this->whenLoaded('originBranch', fn() => $this->order_type === 'supplier'
                 ? ['id' => null, 'name' => $this->supplier_name ?? 'Supplier']

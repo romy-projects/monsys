@@ -7,12 +7,18 @@ use App\Http\Resources\DeliveryOrderResource;
 use App\Http\Traits\ApiResponse;
 use App\Models\DeliveryOrder;
 use App\Models\StockClose;
+use App\Services\DocumentNumberService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class DeliveryOrderController extends Controller
 {
     use ApiResponse;
+
+    public function __construct(private readonly DocumentNumberService $documentNumbers)
+    {
+    }
 
     public function index(Request $request): JsonResponse
     {
@@ -82,7 +88,7 @@ class DeliveryOrderController extends Controller
 
         $data = $request->validate([
             'order_type'             => ['required', 'in:inter_branch,supplier'],
-            'do_number'              => ['required', 'string', 'max:50', 'unique:delivery_orders,do_number'],
+            'do_number'              => ['nullable', 'string', 'max:50', 'unique:delivery_orders,do_number'],
             'order_date'             => ['required', 'date'],
             'cylinder_type'          => ['required', 'in:3kg,5.5kg,12kg,50kg'],
             'quantity_ordered'       => ['required', 'integer', 'min:1'],
@@ -115,12 +121,51 @@ class DeliveryOrderController extends Controller
             $data['origin_branch_id'] = 1;
         }
 
-        $do = DeliveryOrder::create($data);
+        // Allocate the DO number server-side when the client omits it (allocation + insert
+        // in one transaction so concurrent creates queue instead of colliding).
+        $do = DB::transaction(function () use ($data) {
+            $data['do_number'] ??= $this->documentNumbers->next('do');
+
+            return DeliveryOrder::create($data);
+        });
 
         return $this->created(
             new DeliveryOrderResource($do->load('originBranch', 'destinationBranch', 'transportir', 'expedition', 'vehicle'))
         );
     }
+    /**
+     * Upload the proof-of-delivery receipt for an order on transportir or already delivered.
+     *
+     * Authorized for approvers (Pusat/Regional) and for the destination branch that physically
+     * received the Tabung — the branch is the party that holds the signed receipt.
+     */
+    public function uploadReceipt(DeliveryOrder $deliveryOrder, Request $request): JsonResponse
+    {
+        $user = $request->user();
+
+        if (! $user->canApproveOrders() && $user->branch_id !== $deliveryOrder->destination_branch_id) {
+            return $this->forbidden('Only approvers or the destination branch can upload a receipt.');
+        }
+
+        if (! in_array($deliveryOrder->status, ['on_transportir', 'delivered'])) {
+            return $this->error('A receipt can only be uploaded for orders on transportir or delivered.', 422);
+        }
+
+        $request->validate([
+            'receipt' => ['required', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:2048'],
+        ]);
+
+        $path = $request->file('receipt')->store('do-receipts', 'public');
+
+        $deliveryOrder->update(['receipt_path' => $path]);
+
+        return $this->success(
+            new DeliveryOrderResource($deliveryOrder->fresh()),
+            'Receipt uploaded.'
+        );
+    }
+
+
 
     public function update(DeliveryOrder $deliveryOrder, Request $request): JsonResponse
     {
