@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Validation\ValidationException;
 
 class LpgPrice extends Model
 {
@@ -12,6 +13,7 @@ class LpgPrice extends Model
 
     protected $fillable = [
         'branch_id',
+        'purchase_order_id',
         'cylinder_type',
         'purchase_price',
         'selling_price',
@@ -28,6 +30,11 @@ class LpgPrice extends Model
     public function branch(): BelongsTo
     {
         return $this->belongsTo(Branch::class);
+    }
+
+    public function purchaseOrder(): BelongsTo
+    {
+        return $this->belongsTo(DeliveryOrder::class, 'purchase_order_id');
     }
 
     public function createdBy(): BelongsTo
@@ -51,8 +58,9 @@ class LpgPrice extends Model
         if ($branchId) {
             $branchPrice = static::where('cylinder_type', $cylinderType)
                 ->where('branch_id', $branchId)
-                ->where('effective_date', '<=', $date)
-                ->latest('effective_date')
+                ->whereDate('effective_date', '<=', $date)
+                ->orderByDesc('effective_date')
+                ->orderByDesc('id')
                 ->first();
 
             if ($branchPrice) {
@@ -63,9 +71,18 @@ class LpgPrice extends Model
         // Fallback to global price
         return static::where('cylinder_type', $cylinderType)
             ->whereNull('branch_id')
-            ->where('effective_date', '<=', $date)
-            ->latest('effective_date')
+            ->whereDate('effective_date', '<=', $date)
+            ->orderByDesc('effective_date')
+            ->orderByDesc('id')
             ->first();
+    }
+
+    public static function requiredPriceAtDate(string $cylinderType, string $date, ?int $branchId = null): self
+    {
+        return static::priceAtDate($cylinderType, $date, $branchId)
+            ?? throw ValidationException::withMessages([
+                'lpg_price_id' => "No LPG Price is configured for cylinder type {$cylinderType} on {$date}. Create an effective LPG Price before saving this transaction.",
+            ]);
     }
 
     /**
@@ -80,8 +97,8 @@ class LpgPrice extends Model
     }
 
     /**
-     * Calculate total HPP (purchase_price × qty) for a set of sales,
-     * matching each sale to the price effective on its sale_date.
+     * Calculate HPP from each sale's stored purchase-price snapshot, falling
+     * back to date-matched prices for legacy sales without a snapshot.
      *
      * @param  iterable  $sales  Collection of objects with ->cylinder_type, ->sale_date, ->quantity
      * @param  int|null  $branchId
@@ -89,24 +106,32 @@ class LpgPrice extends Model
      */
     public static function totalHppForSales(iterable $sales, ?int $branchId = null): float
     {
-        // Pre-load all price records for the branch and types to avoid N+1
-        $types = collect($sales)->pluck('cylinder_type')->unique()->values()->all();
+        $sales = collect($sales);
+        $types = $sales->pluck('cylinder_type')->unique()->values()->all();
+        $branchIds = $branchId
+            ? [$branchId]
+            : $sales->pluck('branch_id')->filter()->unique()->values()->all();
 
         $allPrices = static::whereNull('branch_id')
             ->whereIn('cylinder_type', $types)
             ->orderBy('cylinder_type')
             ->orderBy('effective_date')
+            ->orderBy('id')
             ->get();
 
-        if ($branchId) {
-            $branchPrices = static::where('branch_id', $branchId)
+        $branchPrices = count($branchIds) > 0
+            ? static::whereIn('branch_id', $branchIds)
                 ->whereIn('cylinder_type', $types)
                 ->orderBy('cylinder_type')
                 ->orderBy('effective_date')
-                ->get();
-        } else {
-            $branchPrices = collect();
-        }
+                ->orderBy('id')
+                ->get()
+            : collect();
+
+        $referencedPrices = static::whereIn(
+            'id',
+            $sales->pluck('lpg_price_id')->filter()->unique()->values()
+        )->get()->keyBy('id');
 
         $total = 0.0;
 
@@ -121,17 +146,26 @@ class LpgPrice extends Model
                 continue;
             }
 
-            // Find branch-specific price effective on this sale date
-            $price = $branchPrices
-                ->where('cylinder_type', $type)
-                ->where('effective_date', '<=', $saleDate)
-                ->last();
+            if (isset($sale->purchase_price_at_sale) && $sale->purchase_price_at_sale !== null) {
+                $total += (float) $sale->purchase_price_at_sale * $qty;
+                continue;
+            }
 
-            // Fallback to global
+            $price = $referencedPrices->get($sale->lpg_price_id ?? null);
+            $saleBranchId = $sale->branch_id ?? $branchId;
+
+            if (! $price && $saleBranchId) {
+                $price = $branchPrices
+                    ->where('branch_id', $saleBranchId)
+                    ->where('cylinder_type', $type)
+                    ->filter(fn(self $candidate) => $candidate->effective_date->toDateString() <= $saleDate)
+                    ->last();
+            }
+
             if (! $price) {
                 $price = $allPrices
                     ->where('cylinder_type', $type)
-                    ->where('effective_date', '<=', $saleDate)
+                    ->filter(fn(self $candidate) => $candidate->effective_date->toDateString() <= $saleDate)
                     ->last();
             }
 

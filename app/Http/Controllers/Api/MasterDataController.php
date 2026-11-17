@@ -168,7 +168,10 @@ class MasterDataController extends Controller
 
     public function prices(Request $request): JsonResponse
     {
-        $query = LpgPrice::with('branch')->orderBy('cylinder_type')->orderByDesc('effective_date');
+        $query = LpgPrice::with('branch')
+            ->orderBy('cylinder_type')
+            ->orderByDesc('effective_date')
+            ->orderByDesc('id');
 
         if ($request->filled('branch_id')) {
             $query->where('branch_id', $request->branch_id);
@@ -185,7 +188,13 @@ class MasterDataController extends Controller
         $types    = ['3kg', '5.5kg', '12kg', '50kg'];
         $prices   = collect($types)->mapWithKeys(fn($type) => [
             $type => ($p = LpgPrice::currentPrice($type, $branchId))
-                ? ['purchase_price' => (float) $p->purchase_price, 'selling_price' => (float) $p->selling_price]
+                ? [
+                    'id' => $p->id,
+                    'branch_id' => $p->branch_id,
+                    'effective_date' => $p->effective_date?->toDateString(),
+                    'purchase_price' => (float) $p->purchase_price,
+                    'selling_price' => (float) $p->selling_price,
+                ]
                 : null,
         ]);
 

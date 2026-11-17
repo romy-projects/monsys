@@ -10,6 +10,8 @@ use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Database\Eloquent\Model;
 
 class StockMutationResource extends Resource
 {
@@ -225,12 +227,17 @@ class StockMutationResource extends Resource
                     ),
             ])
             ->actions([
-                Tables\Actions\EditAction::make(),
-                Tables\Actions\DeleteAction::make(),
+                Tables\Actions\EditAction::make()
+                    ->visible(fn (StockMutation $record) => static::canEdit($record)),
+                Tables\Actions\DeleteAction::make()
+                    ->visible(fn (StockMutation $record) => static::canDelete($record)),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make(),
+                    Tables\Actions\DeleteBulkAction::make()
+                        ->using(fn (Collection $records) => $records
+                            ->whereNull('purchase_order_id')
+                            ->each(fn (StockMutation $record) => $record->delete())),
                 ]),
             ])
             ->defaultSort('mutation_date', 'desc');
@@ -248,5 +255,15 @@ class StockMutationResource extends Resource
             'create' => Pages\CreateStockMutation::route('/create'),
             'edit'   => Pages\EditStockMutation::route('/{record}/edit'),
         ];
+    }
+
+    public static function canEdit(Model $record): bool
+    {
+        return $record->purchase_order_id === null;
+    }
+
+    public static function canDelete(Model $record): bool
+    {
+        return $record->purchase_order_id === null;
     }
 }

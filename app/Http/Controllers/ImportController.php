@@ -7,7 +7,6 @@ use App\Models\Customer;
 use App\Models\Expedition;
 use App\Models\LpgPrice;
 use App\Models\SalesTarget;
-use App\Models\StockItem;
 use App\Models\User;
 use App\Models\Vehicle;
 use App\Support\XlsxReader;
@@ -25,8 +24,7 @@ class ImportController extends Controller
         'customers'     => ['branch_code', 'name', 'type', 'phone', 'credit_limit'],
         'vehicles'      => ['branch_code', 'plate_number', 'driver_name', 'capacity_kg', 'status'],
         'expeditions'   => ['name', 'code', 'phone', 'address', 'status'],
-        'lpg_prices'    => ['cylinder_type', 'purchase_price', 'selling_price', 'effective_date'],
-        'stock_items'   => ['branch_code', 'cylinder_type', 'qty_full', 'qty_empty', 'qty_damaged'],
+        'lpg_prices'    => ['branch_code', 'cylinder_type', 'purchase_price', 'selling_price', 'effective_date'],
         'sales_targets' => ['branch_code', 'year', 'month', 'cylinder_type', 'target_qty', 'target_revenue'],
     ];
 
@@ -230,15 +228,8 @@ class ImportController extends Controller
                     $errors[] = ['row' => $rowNum, 'field' => 'cylinder_type', 'message' => 'Cylinder type must be: ' . implode(', ', $this->enums['cylinder_type'])];
                 }
                 if (empty($row['purchase_price']) && $row['purchase_price'] !== 0) $errors[] = ['row' => $rowNum, 'field' => 'purchase_price', 'message' => 'Purchase price is required.'];
+                if (empty($row['selling_price']) && $row['selling_price'] !== 0) $errors[] = ['row' => $rowNum, 'field' => 'selling_price', 'message' => 'Selling price is required.'];
                 if (empty($row['effective_date'])) $errors[] = ['row' => $rowNum, 'field' => 'effective_date', 'message' => 'Effective date is required.'];
-                break;
-
-            case 'stock_items':
-                if (empty($row['branch_code'])) $errors[] = ['row' => $rowNum, 'field' => 'branch_code', 'message' => 'Branch code is required.'];
-                if (empty($row['cylinder_type'])) $errors[] = ['row' => $rowNum, 'field' => 'cylinder_type', 'message' => 'Cylinder type is required.'];
-                if (! empty($row['cylinder_type']) && ! in_array($row['cylinder_type'], $this->enums['cylinder_type'])) {
-                    $errors[] = ['row' => $rowNum, 'field' => 'cylinder_type', 'message' => 'Cylinder type must be: ' . implode(', ', $this->enums['cylinder_type'])];
-                }
                 if (! empty($row['branch_code']) && ! Branch::where('code', $row['branch_code'])->exists()) {
                     $errors[] = ['row' => $rowNum, 'field' => 'branch_code', 'message' => "Branch code '{$row['branch_code']}' not found."];
                 }
@@ -334,27 +325,18 @@ class ImportController extends Controller
                 break;
 
             case 'lpg_prices':
+                $branchId = ! empty($data['branch_code'])
+                    ? Branch::where('code', $data['branch_code'])->value('id')
+                    : null;
+
                 LpgPrice::create([
+                    'branch_id'       => $branchId,
                     'cylinder_type'   => $data['cylinder_type'],
                     'purchase_price'  => (float) ($data['purchase_price'] ?? 0),
                     'selling_price'   => (float) ($data['selling_price'] ?? 0),
                     'effective_date'  => $data['effective_date'],
+                    'created_by'      => auth()->id(),
                 ]);
-                break;
-
-            case 'stock_items':
-                $branchId = null;
-                if (! empty($data['branch_code'])) {
-                    $branchId = Branch::where('code', $data['branch_code'])->value('id');
-                }
-                StockItem::updateOrCreate(
-                    ['branch_id' => $branchId, 'cylinder_type' => $data['cylinder_type']],
-                    [
-                        'qty_full'    => (int) ($data['qty_full'] ?? 0),
-                        'qty_empty'   => (int) ($data['qty_empty'] ?? 0),
-                        'qty_damaged' => (int) ($data['qty_damaged'] ?? 0),
-                    ]
-                );
                 break;
 
             case 'sales_targets':

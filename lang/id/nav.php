@@ -47,6 +47,7 @@ return [
         // Data Master
         'master_branches'    => 'Daftar Cabang',
         'master_expeditions' => 'Daftar Ekspedisi',
+        'master_transportirs' => 'Daftar Transportir',
         'master_prices'      => 'Harga Dasar LPG',
         'master_users'       => 'User & Akses',
 

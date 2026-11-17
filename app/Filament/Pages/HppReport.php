@@ -60,9 +60,10 @@ class HppReport extends Page
 
         // Get all sales in the period for date-matched HPP calculation
         $allSales = DailySale::query()
+            ->with('branch:id,name')
             ->whereBetween('sale_date', [$startDate, $endDate])
             ->when($branchId, fn($q) => $q->where('branch_id', $branchId))
-            ->select(['sale_date', 'cylinder_type', 'quantity'])
+            ->select(['branch_id', 'sale_date', 'cylinder_type', 'quantity', 'lpg_price_id', 'purchase_price_at_sale'])
             ->get();
 
         // Sales grouped by cylinder_type for the period
@@ -79,6 +80,7 @@ class HppReport extends Page
             ->whereIn('cylinder_type', $types)
             ->orderBy('cylinder_type')
             ->orderBy('effective_date')
+            ->orderBy('id')
             ->get();
 
         if ($branchId) {
@@ -86,6 +88,7 @@ class HppReport extends Page
                 ->whereIn('cylinder_type', $types)
                 ->orderBy('cylinder_type')
                 ->orderBy('effective_date')
+                ->orderBy('id')
                 ->get();
         } else {
             $branchPrices = collect();
@@ -100,51 +103,40 @@ class HppReport extends Page
             // Get the latest price effective on start_date for display
             $startPrice = $branchPrices
                 ->where('cylinder_type', $type)
-                ->where('effective_date', '<=', $startDate)
+                ->filter(fn($price) => $price->effective_date->toDateString() <= $startDate)
                 ->last();
 
             if (! $startPrice) {
                 $startPrice = $allPrices
                     ->where('cylinder_type', $type)
-                    ->where('effective_date', '<=', $startDate)
+                    ->filter(fn($price) => $price->effective_date->toDateString() <= $startDate)
                     ->last();
             }
 
             // Get the latest price effective on end_date for display
             $endPrice = $branchPrices
                 ->where('cylinder_type', $type)
-                ->where('effective_date', '<=', $endDate)
+                ->filter(fn($price) => $price->effective_date->toDateString() <= $endDate)
                 ->last();
 
             if (! $endPrice) {
                 $endPrice = $allPrices
                     ->where('cylinder_type', $type)
-                    ->where('effective_date', '<=', $endDate)
+                    ->filter(fn($price) => $price->effective_date->toDateString() <= $endDate)
                     ->last();
             }
 
             // Calculate actual HPP matching each sale's date
             $typeSales     = $allSales->where('cylinder_type', $type);
-            $totalHpp      = 0;
-            foreach ($typeSales as $ts) {
-                $saleDate = $ts->sale_date->toDateString();
-                $qty      = (int) $ts->quantity;
-
-                $priceAtSale = $branchPrices
-                    ->where('cylinder_type', $type)
-                    ->where('effective_date', '<=', $saleDate)
-                    ->last();
-
-                if (! $priceAtSale) {
-                    $priceAtSale = $allPrices
-                        ->where('cylinder_type', $type)
-                        ->where('effective_date', '<=', $saleDate)
-                        ->last();
-                }
-
-                $hppPerUnit = $priceAtSale ? (float) $priceAtSale->purchase_price : 0;
-                $totalHpp  += $hppPerUnit * $qty;
-            }
+            $totalHpp = LpgPrice::totalHppForSales($typeSales);
+            $priceSources = $typeSales
+                ->groupBy('branch_id')
+                ->map(fn($branchSales) => [
+                    'branch_name' => $branchSales->first()->branch?->name ?? 'Unknown branch',
+                    'price_ids' => $branchSales->pluck('lpg_price_id')->filter()->unique()->values(),
+                    'unlinked_count' => $branchSales->whereNull('lpg_price_id')->count(),
+                ])
+                ->values();
 
             $purchasePriceStart = $startPrice ? (float) $startPrice->purchase_price : 0;
             $purchasePriceEnd   = $endPrice   ? (float) $endPrice->purchase_price : 0;
@@ -161,6 +153,7 @@ class HppReport extends Page
                 'purchase_price_end'   => $purchasePriceEnd,
                 'selling_price_start'  => $sellingPriceStart,
                 'selling_price_end'    => $sellingPriceEnd,
+                'price_sources'        => $priceSources,
                 'total_hpp'          => $totalHpp,
                 'total_revenue'      => $totalRevenue,
                 'gross_margin'       => $grossMargin,
@@ -183,6 +176,7 @@ class HppReport extends Page
         return [
             'rows'       => $rows,
             'totals'     => $totals,
+            'branch_id'  => $branchId,
             'start_date' => $startDate,
             'end_date'   => $endDate,
         ];
@@ -191,5 +185,10 @@ class HppReport extends Page
     public static function canAccess(): bool
     {
         return auth()->user()?->canViewFinance() ?? false;
+    }
+
+    public static function shouldRegisterNavigation(): bool
+    {
+        return auth()->user()?->isOwnerPusat() ?? false;
     }
 }

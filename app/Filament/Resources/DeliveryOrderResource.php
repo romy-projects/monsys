@@ -28,6 +28,11 @@ class DeliveryOrderResource extends Resource
 
     protected static ?string $recordTitleAttribute = 'do_number';
 
+    public static function shouldRegisterNavigation(): bool
+    {
+        return false;
+    }
+
     public static function getNavigationLabel(): string
     {
         return __('nav.item.do_request');

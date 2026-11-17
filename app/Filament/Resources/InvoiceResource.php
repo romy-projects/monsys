@@ -6,6 +6,7 @@ use App\Filament\Resources\InvoiceResource\Pages;
 use App\Models\Branch;
 use App\Models\Customer;
 use App\Models\Invoice;
+use App\Support\LpgPriceFormState;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
@@ -50,6 +51,8 @@ class InvoiceResource extends Resource
                         ->disabled(fn() => ! $isPusat)
                         ->dehydrated()
                         ->default(fn() => $isPusat ? null : $user->branch_id)
+                        ->live()
+                        ->afterStateUpdated(fn(Forms\Get $get, Forms\Set $set) => LpgPriceFormState::sync($get, $set, 'unit_price'))
                         ->columnSpan(1),
 
                     Forms\Components\TextInput::make('invoice_number')
@@ -75,6 +78,7 @@ class InvoiceResource extends Resource
                         ->required()
                         ->live()
                         ->visible(fn() => $isPusat)
+                        ->afterStateUpdated(fn(Forms\Get $get, Forms\Set $set) => LpgPriceFormState::sync($get, $set, 'unit_price', false, true))
                         ->columnSpan(1),
 
                     Forms\Components\Select::make('reference_id')
@@ -99,6 +103,8 @@ class InvoiceResource extends Resource
                         })
                         ->searchable()
                         ->required()
+                        ->live()
+                        ->afterStateUpdated(fn(Forms\Get $get, Forms\Set $set) => LpgPriceFormState::sync($get, $set, 'unit_price', false, true))
                         ->columnSpan(1),
 
                     Forms\Components\Select::make('cylinder_type')
@@ -110,6 +116,8 @@ class InvoiceResource extends Resource
                             '50kg'  => '50 kg',
                         ])
                         ->required()
+                        ->live()
+                        ->afterStateUpdated(fn(Forms\Get $get, Forms\Set $set) => LpgPriceFormState::sync($get, $set, 'unit_price', false, true))
                         ->columnSpan(1),
 
                     Forms\Components\TextInput::make('quantity')
@@ -124,11 +132,20 @@ class InvoiceResource extends Resource
 
                     Forms\Components\TextInput::make('unit_price')
                         ->label('Unit Price')
-                        ->numeric()
-                        ->required()
                         ->prefix('Rp')
-                        ->minValue(0)
+                        ->disabled()
+                        ->dehydrated()
+                        ->helperText('Loaded from the effective LPG Price record.')
                         ->live()
+                        ->columnSpan(1),
+
+                    Forms\Components\Hidden::make('lpg_price_id'),
+
+                    Forms\Components\Placeholder::make('lpg_price_reference')
+                        ->label('LPG Price Reference')
+                        ->content(fn(Forms\Get $get) => $get('lpg_price_id')
+                            ? 'LPG Price #' . $get('lpg_price_id')
+                            : 'Select branch and cylinder type to load the effective LPG Price.')
                         ->columnSpan(1),
 
                     Forms\Components\Placeholder::make('total_amount_preview')
@@ -145,6 +162,8 @@ class InvoiceResource extends Resource
                         ->label('Issue Date')
                         ->required()
                         ->default(today())
+                        ->live()
+                        ->afterStateUpdated(fn(Forms\Get $get, Forms\Set $set) => LpgPriceFormState::sync($get, $set, 'unit_price', false, true))
                         ->columnSpan(1),
 
                     Forms\Components\DatePicker::make('due_date')
@@ -190,6 +209,8 @@ class InvoiceResource extends Resource
 
         return $table
             ->modifyQueryUsing(function ($query) use ($user, $isPusat) {
+                $query->with('lpgPrice');
+
                 if (! $isPusat && $user->branch_id) {
                     $query->where('branch_id', $user->branch_id);
                 }
@@ -217,6 +238,17 @@ class InvoiceResource extends Resource
                     ->label('Type')
                     ->badge()
                     ->color('info'),
+
+                Tables\Columns\TextColumn::make('lpgPrice.id')
+                    ->label('LPG Price #')
+                    ->placeholder('Legacy')
+                    ->toggleable(),
+
+                Tables\Columns\TextColumn::make('lpgPrice.effective_date')
+                    ->label('Price Effective')
+                    ->date('d M Y')
+                    ->placeholder('—')
+                    ->toggleable(isToggledHiddenByDefault: true),
 
                 Tables\Columns\TextColumn::make('quantity')
                     ->label('Qty')
@@ -332,6 +364,11 @@ class InvoiceResource extends Resource
     public static function canAccess(): bool
     {
         return auth()->user()?->canViewFinance() ?? false;
+    }
+
+    public static function shouldRegisterNavigation(): bool
+    {
+        return auth()->user()?->isOwnerPusat() ?? false;
     }
 
     public static function canCreate(): bool

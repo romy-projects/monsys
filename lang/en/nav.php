@@ -51,6 +51,7 @@ return [
         // Master
         'master_branches'    => 'Branches',
         'master_expeditions' => 'Expeditions',
+        'master_transportirs' => 'Transportirs',
         'master_prices'      => 'LPG Prices',
         'master_users'       => 'Users & Access',
         'customer'           => 'Customers',

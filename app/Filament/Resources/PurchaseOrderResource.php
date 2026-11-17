@@ -14,6 +14,7 @@ use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 
 class PurchaseOrderResource extends Resource
 {
@@ -45,7 +46,8 @@ class PurchaseOrderResource extends Resource
     public static function form(Form $form): Form
     {
         $user       = auth()->user();
-        $isPusat    = $user->isOwnerPusat() || $user->isRegionalLeader();
+        $isPusat    = $user->isOwnerPusat();
+        $canManageRoute = $isPusat || $user->isRegionalLeader();
         $mainBranch = Branch::mainBranch()->first();
 
         return $form->schema([
@@ -102,7 +104,8 @@ class PurchaseOrderResource extends Resource
                 ->default(fn() => $mainBranch?->id),
 
             Forms\Components\Hidden::make('destination_branch_id')
-                ->default(fn() => $isPusat ? null : $user->branch_id),
+                ->default(fn() => $isPusat ? null : $user->branch_id)
+                ->visible(fn() => ! $canManageRoute),
 
             Forms\Components\Hidden::make('requested_by')
                 ->default(fn() => auth()->id()),
@@ -116,6 +119,8 @@ class PurchaseOrderResource extends Resource
                         ->placeholder('e.g. SUM Pusat')
                         ->default(fn() => $mainBranch?->name)
                         ->required()
+                        ->disabled()
+                        ->dehydrated()
                         ->columnSpan(1),
 
                     Forms\Components\DatePicker::make('eta')
@@ -127,13 +132,19 @@ class PurchaseOrderResource extends Resource
             // ----- Route & Expedition (pusat only) -----
             Forms\Components\Section::make('Route & Expedition')
                 ->description('Origin, destination, and shipping details')
-                ->visible(fn() => $isPusat)
+                ->visible(fn() => $canManageRoute)
                 ->schema([
                     Forms\Components\Select::make('destination_branch_id')
-                        ->label('Destination Branch / Tujuan')
-                        ->options(Branch::active()->pluck('name', 'id'))
+                        ->label('Requesting Branch / Cabang Pemohon')
+                        ->options(
+                            Branch::active()
+                                ->when($mainBranch, fn (Builder $query) => $query->where('id', '!=', $mainBranch->id))
+                                ->orderBy('name')
+                                ->pluck('name', 'id')
+                        )
                         ->searchable()
                         ->required()
+                        ->disabled(fn (string $operation): bool => $operation === 'edit')
                         ->columnSpan(1),
 
                     Forms\Components\Select::make('transportir_id')
@@ -196,9 +207,9 @@ class PurchaseOrderResource extends Resource
 
         return $table
             ->modifyQueryUsing(function (Builder $query) use ($user, $isPusat) {
-                $query->purchaseOrders()->with(['originBranch', 'destinationBranch', 'expedition', 'linkedDo']);
+                $query->purchaseOrders()->with(['originBranch', 'destinationBranch', 'expedition', 'requestedBy']);
 
-                if (! $isPusat && $user->branch_id) {
+                if (! $isPusat) {
                     $query->where('destination_branch_id', $user->branch_id);
                 }
             })
@@ -218,6 +229,11 @@ class PurchaseOrderResource extends Resource
                 Tables\Columns\TextColumn::make('destinationBranch.name')
                     ->label('To (Branch)')
                     ->searchable(),
+
+                Tables\Columns\TextColumn::make('requestedBy.name')
+                    ->label('Requested By')
+                    ->searchable()
+                    ->toggleable(),
 
                 Tables\Columns\TextColumn::make('cylinder_type')
                     ->label('Type')
@@ -251,34 +267,6 @@ class PurchaseOrderResource extends Resource
                         'cancelled'        => 'Cancelled',
                         default            => $state,
                     }),
-
-                // Shipment status — shows the linked DO's status (auto-created from this PO)
-                Tables\Columns\TextColumn::make('linkedDo.status')
-                    ->label('Shipment Status')
-                    ->badge()
-                    ->color(fn(?string $state): string => match ($state) {
-                        'draft'            => 'gray',
-                        'pending_approval' => 'warning',
-                        'approved'         => 'info',
-                        'in_transit'       => 'primary',
-                        'on_transportir'   => 'purple',
-                        'delivered'        => 'success',
-                        'cancelled'        => 'danger',
-                        null               => 'gray',
-                        default            => 'gray',
-                    })
-                    ->formatStateUsing(fn(?string $state) => match ($state) {
-                        'draft'            => 'Draft',
-                        'pending_approval' => 'Pending Approval',
-                        'approved'         => 'Approved',
-                        'in_transit'       => 'In Transit',
-                        'on_transportir'   => 'On Transportir',
-                        'delivered'        => 'Delivered',
-                        'cancelled'        => 'Cancelled',
-                        null               => 'Not yet shipped',
-                        default            => $state,
-                    })
-                    ->toggleable(),
 
                 Tables\Columns\TextColumn::make('eta')
                     ->label('ETA')
@@ -367,6 +355,8 @@ class PurchaseOrderResource extends Resource
                     ->visible(
                         fn(DeliveryOrder $record) =>
                         in_array($record->status, ['in_transit', 'on_transportir'])
+                            && auth()->user()?->canCreatePurchaseOrder()
+                            && auth()->user()?->branch_id === $record->destination_branch_id
                     )
                     ->form([
                         Forms\Components\TextInput::make('quantity_received')
@@ -402,7 +392,7 @@ class PurchaseOrderResource extends Resource
                     ->requiresConfirmation(),
 
                 Tables\Actions\EditAction::make()
-                    ->visible(fn(DeliveryOrder $record) => $record->status === 'draft'),
+                    ->visible(fn(DeliveryOrder $record) => static::canEdit($record)),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
@@ -412,12 +402,32 @@ class PurchaseOrderResource extends Resource
             ->defaultSort('order_date', 'desc');
     }
 
-    /** Pusat cannot create POs — only approve/manage. */
+    /** Pusat and branch users can create POs; regional users can only manage them. */
     public static function canCreate(): bool
     {
         $user = auth()->user();
 
-        return ! $user->isOwnerPusat() && ! $user->isRegionalLeader();
+        return $user->isOwnerPusat() || $user->canCreatePurchaseOrder();
+    }
+
+    public static function canEdit(Model $record): bool
+    {
+        $user = auth()->user();
+
+        return $record->document_type === 'po' &&
+            $record->status === 'draft' &&
+            ($user?->isOwnerPusat() ||
+                ($user?->canCreatePurchaseOrder() && $record->destination_branch_id === $user->branch_id));
+    }
+
+    public static function canDelete(Model $record): bool
+    {
+        $user = auth()->user();
+
+        return $record->document_type === 'po' &&
+            $record->status === 'draft' &&
+            ($user?->isOwnerPusat() ||
+                ($user?->canCreatePurchaseOrder() && $record->destination_branch_id === $user->branch_id));
     }
 
     public static function getRelations(): array

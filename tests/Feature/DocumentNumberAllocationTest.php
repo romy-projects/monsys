@@ -4,9 +4,11 @@ namespace Tests\Feature;
 
 use App\Models\Branch;
 use App\Models\DeliveryOrder;
+use App\Models\LpgPrice;
 use App\Models\StockClose;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 class DocumentNumberAllocationTest extends TestCase
@@ -71,7 +73,7 @@ class DocumentNumberAllocationTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function branch_can_create_a_purchase_order_without_sending_a_number(): void
     {
         $this->actingAs($this->branchOwner, 'sanctum');
@@ -93,7 +95,7 @@ class DocumentNumberAllocationTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function repeated_creates_get_distinct_numbers_and_never_collide(): void
     {
         $this->actingAs($this->branchOwner, 'sanctum');
@@ -118,7 +120,7 @@ class DocumentNumberAllocationTest extends TestCase
         $this->assertSame(10, DeliveryOrder::where('document_type', 'po')->count());
     }
 
-    /** @test */
+    #[Test]
     public function an_explicitly_supplied_number_is_still_honoured(): void
     {
         $this->actingAs($this->branchOwner, 'sanctum');
@@ -134,7 +136,7 @@ class DocumentNumberAllocationTest extends TestCase
             ->assertJsonPath('data.do_number', 'PO2026-777');
     }
 
-    /** @test */
+    #[Test]
     public function pusat_can_create_a_sales_order_without_sending_a_number(): void
     {
         $this->actingAs($this->pusat, 'sanctum');
@@ -151,10 +153,19 @@ class DocumentNumberAllocationTest extends TestCase
             ->assertJsonPath('data.document_type', 'so');
     }
 
-    /** @test */
+    #[Test]
     public function invoice_number_is_allocated_server_side(): void
     {
         $this->actingAs($this->pusat, 'sanctum');
+
+        $price = LpgPrice::create([
+            'branch_id' => $this->mainBranch->id,
+            'cylinder_type' => '3kg',
+            'purchase_price' => 10000,
+            'selling_price' => 20000,
+            'effective_date' => '2026-08-01',
+            'created_by' => $this->pusat->id,
+        ]);
 
         $response = $this->postJson('/api/v1/invoices', [
             'branch_id'     => $this->mainBranch->id,
@@ -168,9 +179,10 @@ class DocumentNumberAllocationTest extends TestCase
         $response->assertStatus(201);
 
         $this->assertSame("INV{$this->year}-001", $response->json('data.invoice_number'));
+        $this->assertSame($price->id, $response->json('data.lpg_price_id'));
     }
 
-    /** @test */
+    #[Test]
     public function auto_created_do_from_an_approved_so_gets_a_server_number(): void
     {
         $so = DeliveryOrder::create([

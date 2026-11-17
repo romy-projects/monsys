@@ -6,8 +6,10 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\DailySaleResource;
 use App\Http\Traits\ApiResponse;
 use App\Models\DailySale;
+use App\Models\LpgPrice;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 
 class SalesController extends Controller
 {
@@ -16,7 +18,7 @@ class SalesController extends Controller
     public function index(Request $request): JsonResponse
     {
         $user  = $request->user();
-        $query = DailySale::query()->with(['branch', 'customer', 'createdBy'])->orderByDesc('sale_date');
+        $query = DailySale::query()->with(['branch', 'customer', 'createdBy', 'lpgPrice'])->orderByDesc('sale_date');
 
         if (! $user->isOwnerPusat() && ! $user->isRegionalLeader()) {
             $query->where('branch_id', $user->branch_id);
@@ -45,7 +47,7 @@ class SalesController extends Controller
         $user = $request->user();
         $this->authorizeBranch($user, $dailySale->branch_id);
 
-        return $this->success(new DailySaleResource($dailySale->load('branch', 'customer', 'createdBy')));
+        return $this->success(new DailySaleResource($dailySale->load('branch', 'customer', 'createdBy', 'lpgPrice')));
     }
 
     public function store(Request $request): JsonResponse
@@ -58,7 +60,7 @@ class SalesController extends Controller
             'cylinder_type' => ['required', 'in:3kg,5.5kg,12kg,50kg'],
             'buyer_type'    => ['required', 'in:retail,agent,corporate'],
             'quantity'      => ['required', 'integer', 'min:1'],
-            'selling_price' => ['required', 'numeric', 'min:0'],
+            'selling_price' => ['sometimes', 'numeric', 'min:0'],
             'sale_date'     => ['required', 'date'],
             'notes'         => ['nullable', 'string'],
         ]);
@@ -66,11 +68,22 @@ class SalesController extends Controller
         if (! $user->isOwnerPusat() && ! $user->isRegionalLeader()) {
             $data['branch_id'] = $user->branch_id;
         }
+
+        $price = LpgPrice::requiredPriceAtDate(
+            $data['cylinder_type'],
+            $data['sale_date'],
+            (int) $data['branch_id'],
+        );
+        $this->assertSubmittedPriceMatches($data['selling_price'] ?? null, (float) $price->selling_price, $price->id);
+
+        $data['lpg_price_id'] = $price->id;
+        $data['purchase_price_at_sale'] = $price->purchase_price;
+        $data['selling_price'] = $price->selling_price;
         $data['created_by'] = $user->id;
 
         $sale = DailySale::create($data);
 
-        return $this->created(new DailySaleResource($sale->load('branch', 'customer', 'createdBy')));
+        return $this->created(new DailySaleResource($sale->load('branch', 'customer', 'createdBy', 'lpgPrice')));
     }
 
     public function update(DailySale $dailySale, Request $request): JsonResponse
@@ -88,9 +101,26 @@ class SalesController extends Controller
             'notes'         => ['nullable', 'string'],
         ]);
 
+        $submittedPrice = $data['selling_price'] ?? null;
+        unset($data['selling_price']);
+
+        $priceInputsChanged = isset($data['cylinder_type']) || isset($data['sale_date']);
+        if ($priceInputsChanged) {
+            $cylinderType = $data['cylinder_type'] ?? $dailySale->cylinder_type;
+            $saleDate = $data['sale_date'] ?? $dailySale->sale_date->toDateString();
+            $price = LpgPrice::requiredPriceAtDate($cylinderType, $saleDate, $dailySale->branch_id);
+            $this->assertSubmittedPriceMatches($submittedPrice, (float) $price->selling_price, $price->id);
+
+            $data['lpg_price_id'] = $price->id;
+            $data['purchase_price_at_sale'] = $price->purchase_price;
+            $data['selling_price'] = $price->selling_price;
+        } elseif ($submittedPrice !== null) {
+            $this->assertSubmittedPriceMatches($submittedPrice, (float) $dailySale->selling_price, (int) $dailySale->lpg_price_id);
+        }
+
         $dailySale->update($data);
 
-        return $this->success(new DailySaleResource($dailySale->fresh()->load('branch', 'customer', 'createdBy')));
+        return $this->success(new DailySaleResource($dailySale->fresh()->load('branch', 'customer', 'createdBy', 'lpgPrice')));
     }
 
     public function destroy(DailySale $dailySale, Request $request): JsonResponse
@@ -107,5 +137,14 @@ class SalesController extends Controller
     {
         if ($user->isOwnerPusat() || $user->isRegionalLeader()) return;
         if ($user->branch_id !== $branchId) abort(403);
+    }
+
+    private function assertSubmittedPriceMatches(mixed $submittedPrice, float $effectivePrice, int $priceId): void
+    {
+        if ($submittedPrice !== null && number_format((float) $submittedPrice, 2, '.', '') !== number_format($effectivePrice, 2, '.', '')) {
+            throw ValidationException::withMessages([
+                'selling_price' => "Selling price is controlled by LPG Price #{$priceId}. Use the effective LPG Price for this transaction.",
+            ]);
+        }
     }
 }

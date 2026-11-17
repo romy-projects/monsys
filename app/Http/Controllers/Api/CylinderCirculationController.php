@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\CylinderCirculationResource;
 use App\Http\Traits\ApiResponse;
 use App\Models\CylinderCirculation;
+use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -16,12 +17,8 @@ class CylinderCirculationController extends Controller
     public function index(Request $request): JsonResponse
     {
         $user  = $request->user();
+        $this->authorizeHeadquarters($user);
         $query = CylinderCirculation::query()->with('branch');
-
-        // Branch-scoped for non-pusat users
-        if (! $user->isOwnerPusat() && ! $user->isRegionalLeader()) {
-            $query->where('branch_id', $user->branch_id);
-        }
 
         if ($request->filled('branch_id')) {
             $query->where('branch_id', $request->branch_id);
@@ -48,7 +45,7 @@ class CylinderCirculationController extends Controller
     public function show(CylinderCirculation $cylinderCirculation, Request $request): JsonResponse
     {
         $user = $request->user();
-        $this->authorizeView($user, $cylinderCirculation);
+        $this->authorizeHeadquarters($user);
 
         return $this->success(
             new CylinderCirculationResource($cylinderCirculation->load('branch', 'createdBy'))
@@ -58,6 +55,7 @@ class CylinderCirculationController extends Controller
     public function store(Request $request): JsonResponse
     {
         $user = $request->user();
+        $this->authorizeHeadquarters($user);
 
         $data = $request->validate([
             'branch_id'         => ['required', 'exists:branches,id'],
@@ -86,6 +84,11 @@ class CylinderCirculationController extends Controller
     {
         $user = $request->user();
 
+        $this->authorizeHeadquarters($user);
+        if ($cylinderCirculation->purchase_order_id !== null) {
+            return $this->error('PO receipt circulation entries cannot be edited.', 422);
+        }
+
         $data = $request->validate([
             'transaction_date' => ['sometimes', 'date'],
             'so_number'        => ['nullable', 'string', 'max:100'],
@@ -110,6 +113,11 @@ class CylinderCirculationController extends Controller
     {
         $user = $request->user();
 
+        $this->authorizeHeadquarters($user);
+        if ($cylinderCirculation->purchase_order_id !== null) {
+            return $this->error('PO receipt circulation entries cannot be deleted.', 422);
+        }
+
         $cylinderCirculation->delete();
 
         return $this->noContent();
@@ -119,15 +127,10 @@ class CylinderCirculationController extends Controller
     public function summary(Request $request): JsonResponse
     {
         $user = $request->user();
+        $this->authorizeHeadquarters($user);
         $types = ['3kg', '5.5kg', '12kg', '50kg'];
 
-        $branchQuery = \App\Models\Branch::where('status', 'active');
-
-        if (! $user->isOwnerPusat() && ! $user->isRegionalLeader()) {
-            $branchQuery->where('id', $user->branch_id);
-        }
-
-        $branches = $branchQuery->orderBy('name')->get();
+        $branches = \App\Models\Branch::where('status', 'active')->orderBy('name')->get();
         $rows = [];
 
         foreach ($branches as $branch) {
@@ -160,14 +163,8 @@ class CylinderCirculationController extends Controller
         ]);
     }
 
-    private function authorizeView($user, CylinderCirculation $record): void
+    private function authorizeHeadquarters(?User $user): void
     {
-        if ($user->isOwnerPusat() || $user->isRegionalLeader()) {
-            return;
-        }
-        if ($record->branch_id === $user->branch_id) {
-            return;
-        }
-        abort(403);
+        abort_unless($user?->isOwnerPusat(), 403);
     }
 }

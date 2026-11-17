@@ -4,6 +4,7 @@ namespace App\Filament\Resources\InvoiceResource\Pages;
 
 use App\Filament\Resources\InvoiceResource;
 use App\Models\Invoice;
+use App\Support\InvoicePricing;
 use Filament\Resources\Pages\CreateRecord;
 
 class CreateInvoice extends CreateRecord
@@ -12,6 +13,10 @@ class CreateInvoice extends CreateRecord
 
     protected function mutateFormDataBeforeCreate(array $data): array
     {
+        $price = InvoicePricing::requiredPrice($data);
+
+        $data['lpg_price_id'] = $price->id;
+        $data['unit_price'] = $price->selling_price;
         $data['total_amount'] = (int) ($data['quantity'] ?? 0) * (float) ($data['unit_price'] ?? 0);
         $data['created_by']   = auth()->id();
 
@@ -23,6 +28,8 @@ class CreateInvoice extends CreateRecord
         // Keep customer_id for backward compatibility
         if ($type === 'customer') {
             $data['customer_id'] = $data['reference_id'];
+        } else {
+            $data['customer_id'] = null;
         }
 
         return $data;

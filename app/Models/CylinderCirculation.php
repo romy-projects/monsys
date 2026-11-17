@@ -23,6 +23,7 @@ class CylinderCirculation extends Model
         'handled_by',
         'notes',
         'created_by',
+        'purchase_order_id',
     ];
 
     protected $casts = [
@@ -34,7 +35,7 @@ class CylinderCirculation extends Model
     protected static function booted(): void
     {
         static::creating(function (self $circulation) {
-            // Auto-set direction based on transaction_type
+            // Auto-set direction based on transaction_type.
             if (is_null($circulation->direction)) {
                 $circulation->direction = match ($circulation->transaction_type) {
                     'kirim'           => 'debit',
@@ -44,7 +45,7 @@ class CylinderCirculation extends Model
                 };
             }
 
-            // Auto-fill description if empty
+            // Auto-fill description if empty.
             if (blank($circulation->description)) {
                 $typeLabel = match ($circulation->transaction_type) {
                     'kirim'          => 'Pengiriman tabung',
@@ -65,5 +66,10 @@ class CylinderCirculation extends Model
     public function createdBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
+    }
+
+    public function purchaseOrder(): BelongsTo
+    {
+        return $this->belongsTo(DeliveryOrder::class, 'purchase_order_id');
     }
 }

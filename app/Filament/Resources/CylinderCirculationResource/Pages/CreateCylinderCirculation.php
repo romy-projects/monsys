@@ -11,7 +11,15 @@ class CreateCylinderCirculation extends CreateRecord
 
     protected function mutateFormDataBeforeCreate(array $data): array
     {
+        abort_unless(CylinderCirculationResource::canCreate(), 403);
+
+        $user = auth()->user();
+        if (! $user->isOwnerPusat() && ! $user->isRegionalLeader()) {
+            $data['branch_id'] = $user->branch_id;
+        }
+
         $data['created_by'] = auth()->id();
+
         return $data;
     }
 }

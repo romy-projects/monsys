@@ -17,6 +17,7 @@ class Invoice extends Model
         'customer_id',
         'reference_type',
         'reference_id',
+        'lpg_price_id',
         'cylinder_type',
         'quantity',
         'unit_price',
@@ -46,6 +47,11 @@ class Invoice extends Model
     public function customer(): BelongsTo
     {
         return $this->belongsTo(Customer::class);
+    }
+
+    public function lpgPrice(): BelongsTo
+    {
+        return $this->belongsTo(LpgPrice::class);
     }
 
     /** Polymorphic reference: can be a Customer or a Branch. */

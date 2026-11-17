@@ -3,12 +3,14 @@
 namespace App\Observers;
 
 use App\Models\Branch;
+use App\Models\CylinderCirculation;
 use App\Models\DeliveryOrder;
 use App\Models\StockItem;
 use App\Models\StockMutation;
 use App\Models\User;
 use App\Services\DocumentNumberService;
 use Filament\Notifications\Notification;
+use Illuminate\Support\Facades\DB;
 
 class DeliveryOrderObserver
 {
@@ -48,10 +50,6 @@ class DeliveryOrderObserver
             $this->createDeliveryOrderFromSo($do);
         }
 
-        // T7-18: PO approved → auto-create DO for fulfillment
-        if ($do->document_type === 'po') {
-            $this->createDeliveryOrderFromPo($do);
-        }
     }
 
     /**
@@ -82,39 +80,6 @@ class DeliveryOrderObserver
             'container_number'   => $so->container_number,
             'notes'              => "Auto-created from SO #{$so->do_number}",
             'requested_by'       => $so->requested_by,
-            'status'             => 'draft',
-        ]);
-    }
-
-    /**
-     * T7-18: When a PO is approved, auto-create a DO for fulfillment.
-     */
-    private function createDeliveryOrderFromPo(DeliveryOrder $po): void
-    {
-        $mainBranch = Branch::mainBranch()->first();
-
-        $doNumber = $this->documentNumbers->next('do');
-
-        DeliveryOrder::create([
-            'do_number'          => $doNumber,
-            'document_type'      => 'do',
-            'counterparty_type'  => 'branch',
-            'counterparty_name'  => $po->counterparty_name ?: $po->destinationBranch?->name,
-            'po_number'          => $po->do_number,
-            'order_type'         => 'inter_branch',
-            'origin_branch_id'   => $mainBranch?->id,
-            'destination_branch_id' => $po->destination_branch_id,
-            'cylinder_type'      => $po->cylinder_type,
-            'quantity_ordered'   => $po->quantity_ordered,
-            'order_date'         => $po->order_date,
-            'eta'                => $po->eta,
-            'transportir_id'     => $po->transportir_id,
-            'expedition_id'      => $po->expedition_id,
-            'vehicle_id'         => $po->vehicle_id,
-            'transportir_name'   => $po->transportir_name,
-            'container_number'   => $po->container_number,
-            'notes'              => "Auto-created from PO #{$po->do_number}",
-            'requested_by'       => $po->requested_by,
             'status'             => 'draft',
         ]);
     }
@@ -150,11 +115,18 @@ class DeliveryOrderObserver
             return;
         }
 
+        $isPurchaseOrder = $do->document_type === 'po';
         $docLabel = $do->document_type_label;
+        $title = $isPurchaseOrder
+            ? '✅ Purchase Order Approved'
+            : "✅ {$docLabel} Approved — Stock in Transit";
+        $body = $isPurchaseOrder
+            ? "PO #{$do->do_number} for {$do->cylinder_type} ({$do->quantity_ordered} pcs) has been approved. Track fulfillment on this PO."
+            : "{$docLabel} #{$do->do_number} for {$do->cylinder_type} ({$do->quantity_ordered} pcs) has been approved. Expect delivery soon.";
 
         Notification::make()
-            ->title("✅ {$docLabel} Approved — Stock in Transit")
-            ->body("{$docLabel} #{$do->do_number} for {$do->cylinder_type} ({$do->quantity_ordered} pcs) has been approved. Expect delivery soon.")
+            ->title($title)
+            ->body($body)
             ->success()
             ->sendToDatabase($recipients);
     }
@@ -170,20 +142,24 @@ class DeliveryOrderObserver
             return;
         }
 
+        $documentLabel = $do->document_type === 'po' ? 'PO' : 'DO';
+
         Notification::make()
-            ->title('🚛 DO On Transportir')
-            ->body("DO #{$do->do_number} is now with the transportir. ETA: " . ($do->eta?->format('d M Y') ?? 'N/A') . ".")
+            ->title("🚛 {$documentLabel} On Transportir")
+            ->body("{$documentLabel} #{$do->do_number} is now with the transportir. ETA: " . ($do->eta?->format('d M Y') ?? 'N/A') . ".")
             ->warning()
             ->sendToDatabase($recipients);
     }
 
     private function handleDelivered(DeliveryOrder $do): void
     {
-        // 1. Create stock mutations (origin OUT, destination IN)
-        $this->createStockMutations($do);
-
-        // 2. Update stock quantities for destination branch
-        $this->updateStockItems($do);
+        if ($do->document_type === 'po') {
+            $this->handlePurchaseOrderReceipt($do);
+        } else {
+            // Preserve the established non-PO delivery workflows.
+            $this->createStockMutations($do);
+            $this->updateStockItems($do);
+        }
 
         // 3. Notify destination branch
         $recipients = User::where('branch_id', $do->destination_branch_id)
@@ -192,16 +168,130 @@ class DeliveryOrderObserver
             ->get();
 
         if ($recipients->isNotEmpty()) {
-            $received = $do->quantity_received
+            $received = $do->quantity_received !== null
                 ? number_format($do->quantity_received) . ' pcs received'
                 : 'delivered';
+            $documentLabel = $do->document_type === 'po' ? 'PO' : 'DO';
 
             Notification::make()
                 ->title('📦 Delivery Arrived')
-                ->body("DO #{$do->do_number} — {$received}. Stock has been updated.")
+                ->body("{$documentLabel} #{$do->do_number} — {$received}. Stock has been updated.")
                 ->success()
                 ->sendToDatabase($recipients);
         }
+    }
+
+    private function handlePurchaseOrderReceipt(DeliveryOrder $do): void
+    {
+        DB::transaction(function () use ($do) {
+            $po = DeliveryOrder::query()
+                ->whereKey($do->getKey())
+                ->lockForUpdate()
+                ->first();
+
+            if (! $po || $po->document_type !== 'po' || $po->status !== 'delivered') {
+                return;
+            }
+
+            if (! $po->origin_branch_id || ! $po->destination_branch_id ||
+                $po->origin_branch_id === $po->destination_branch_id) {
+                return;
+            }
+
+            $quantity = $po->quantity_received ?? $po->quantity_ordered;
+            $date = $po->received_date ?? today();
+            $createdBy = auth()->id() ?? $po->requested_by;
+
+            foreach ([
+                ['branch_id' => $po->origin_branch_id, 'type' => 'out'],
+                ['branch_id' => $po->destination_branch_id, 'type' => 'in'],
+            ] as $movement) {
+                $alreadyRecorded = StockMutation::query()
+                    ->where('branch_id', $movement['branch_id'])
+                    ->where('mutation_type', $movement['type'])
+                    ->where(function ($query) use ($po) {
+                        $query->where('purchase_order_id', $po->id)
+                            ->orWhere(function ($legacy) use ($po) {
+                                $legacy->whereNull('purchase_order_id')
+                                    ->where('reference_no', $po->do_number);
+                            });
+                    })
+                    ->exists();
+
+                if ($alreadyRecorded) {
+                    continue;
+                }
+
+                StockMutation::create([
+                    'purchase_order_id'    => $po->id,
+                    'branch_id'            => $movement['branch_id'],
+                    'source_branch_id'     => $movement['type'] === 'out' ? $po->origin_branch_id : null,
+                    'destination_branch_id' => $movement['type'] === 'in' ? $po->destination_branch_id : null,
+                    'cylinder_type'        => $po->cylinder_type,
+                    'mutation_type'        => $movement['type'],
+                    'quantity'             => $quantity,
+                    'reference_no'         => $po->do_number,
+                    'notes'                => $movement['type'] === 'out'
+                        ? "HQ stock fulfilled PO #{$po->do_number} for {$po->destinationBranch?->name}"
+                        : "Receipt for PO #{$po->do_number} from {$po->originBranch?->name}",
+                    'mutation_date'        => $date,
+                    'created_by'           => $createdBy,
+                ]);
+
+                $this->updateStockItemForReceipt(
+                    $movement['branch_id'],
+                    $po->cylinder_type,
+                    $date,
+                    $quantity,
+                    $movement['type'] === 'in'
+                );
+            }
+
+            $circulationExists = CylinderCirculation::query()
+                ->where('branch_id', $po->destination_branch_id)
+                ->where('transaction_type', 'kirim')
+                ->where(function ($query) use ($po) {
+                    $query->where('purchase_order_id', $po->id)
+                        ->orWhere('so_number', $po->do_number);
+                })
+                ->exists();
+
+            if (! $circulationExists) {
+                CylinderCirculation::create([
+                    'purchase_order_id' => $po->id,
+                    'branch_id'          => $po->destination_branch_id,
+                    'transaction_date'   => $date,
+                    'so_number'          => $po->do_number,
+                    'transaction_type'   => 'kirim',
+                    'description'        => "PO #{$po->do_number} received from HQ",
+                    'cylinder_type'      => $po->cylinder_type,
+                    'direction'          => 'debit',
+                    'quantity'           => $quantity,
+                    'notes'              => "Received against PO #{$po->do_number}",
+                    'created_by'         => $createdBy,
+                ]);
+            }
+        });
+    }
+
+    private function updateStockItemForReceipt(
+        int $branchId,
+        string $cylinderType,
+        $date,
+        int $quantity,
+        bool $incoming
+    ): void {
+        $stock = StockItem::query()
+            ->where('branch_id', $branchId)
+            ->where('cylinder_type', $cylinderType)
+            ->whereDate('recorded_at', $date)
+            ->first();
+
+        if (! $stock) {
+            return;
+        }
+
+        $stock->increment('qty_full', $incoming ? $quantity : -$quantity);
     }
 
     private function createStockMutations(DeliveryOrder $do): void

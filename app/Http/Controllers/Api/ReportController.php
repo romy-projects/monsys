@@ -50,7 +50,7 @@ class ReportController extends Controller
 
         // Date-matched HPP
         $rawSales = $query(DailySale::class, 'sale_date')
-            ->select(['sale_date', 'cylinder_type', 'quantity'])
+            ->select(['branch_id', 'sale_date', 'cylinder_type', 'quantity', 'lpg_price_id', 'purchase_price_at_sale'])
             ->get();
         $totalHpp = LpgPrice::totalHppForSales($rawSales, $branchId);
 
@@ -286,7 +286,7 @@ class ReportController extends Controller
 
         // Fetch individual sales for date-matched HPP calculation
         $rawSales = DailySale::query()
-            ->select(['sale_date', 'cylinder_type', 'quantity'])
+            ->select(['branch_id', 'sale_date', 'cylinder_type', 'quantity', 'lpg_price_id', 'purchase_price_at_sale'])
             ->when(! $user->isOwnerPusat() && ! $user->isRegionalLeader(), fn($q) => $q->where('branch_id', $user->branch_id))
             ->when($request->filled('branch_id'), fn($q) => $q->where('branch_id', $request->branch_id))
             ->whereDate('sale_date', '>=', $startDate)
@@ -304,7 +304,6 @@ class ReportController extends Controller
             $typeHpp   = LpgPrice::totalHppForSales($typeSales, $branchId);
             $qtySold   = (int) $r->qty_sold;
 
-            $price = LpgPrice::priceAtDate($r->cylinder_type, null, $branchId);
             $margin   = $typeHpp && $r->revenue > 0 ? $r->revenue - $typeHpp : null;
             $marginPct = $r->revenue > 0 && $margin !== null ? round($margin / $r->revenue * 100, 1) : null;
 
@@ -312,7 +311,7 @@ class ReportController extends Controller
                 'cylinder_type'  => $r->cylinder_type,
                 'qty_sold'       => $qtySold,
                 'revenue'        => (float) $r->revenue,
-                'purchase_price' => $price ? (float) $price->purchase_price : null,
+                'purchase_price' => $qtySold > 0 ? round($typeHpp / $qtySold, 2) : null,
                 'total_hpp'      => $typeHpp,
                 'gross_margin'   => $margin,
                 'margin_pct'     => $marginPct,

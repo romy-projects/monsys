@@ -6,6 +6,7 @@ use App\Filament\Resources\DailySaleResource\Pages;
 use App\Models\Branch;
 use App\Models\Customer;
 use App\Models\DailySale;
+use App\Support\LpgPriceFormState;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
@@ -50,12 +51,16 @@ class DailySaleResource extends Resource
                         ->default($user?->branch_id)
                         ->required()
                         ->searchable()
+                        ->live()
+                        ->afterStateUpdated(fn(Forms\Get $get, Forms\Set $set) => LpgPriceFormState::sync($get, $set, 'selling_price', true))
                         ->columnSpan(1),
 
                     Forms\Components\DatePicker::make('sale_date')
                         ->label('Sale Date / Tanggal')
                         ->required()
                         ->default(today())
+                        ->live()
+                        ->afterStateUpdated(fn(Forms\Get $get, Forms\Set $set) => LpgPriceFormState::sync($get, $set, 'selling_price', true))
                         ->columnSpan(1),
 
                     Forms\Components\Select::make('cylinder_type')
@@ -67,6 +72,8 @@ class DailySaleResource extends Resource
                             '50kg'  => '50 kg',
                         ])
                         ->required()
+                        ->live()
+                        ->afterStateUpdated(fn(Forms\Get $get, Forms\Set $set) => LpgPriceFormState::sync($get, $set, 'selling_price', true))
                         ->columnSpan(1),
 
                     Forms\Components\Select::make('buyer_type')
@@ -104,12 +111,23 @@ class DailySaleResource extends Resource
                         ->suffix('pcs')
                         ->columnSpan(1),
 
+                    Forms\Components\Hidden::make('lpg_price_id'),
+
+                    Forms\Components\Hidden::make('purchase_price_at_sale'),
+
+                    Forms\Components\Placeholder::make('lpg_price_reference')
+                        ->label('LPG Price Reference')
+                        ->content(fn(Forms\Get $get) => $get('lpg_price_id')
+                            ? 'LPG Price #' . $get('lpg_price_id')
+                            : 'Select branch and cylinder type to load the effective LPG Price.')
+                        ->columnSpan(1),
+
                     Forms\Components\TextInput::make('selling_price')
                         ->label('Selling Price per Unit / Harga Jual')
-                        ->numeric()
-                        ->required()
                         ->prefix('Rp')
-                        ->minValue(0)
+                        ->disabled()
+                        ->dehydrated()
+                        ->helperText('Loaded from the effective LPG Price record.')
                         ->columnSpan(1),
                 ])->columns(2),
 
@@ -131,7 +149,7 @@ class DailySaleResource extends Resource
         return $table
             ->modifyQueryUsing(
                 fn($query) =>
-                $query->with(['branch', 'createdBy'])
+                $query->with(['branch', 'createdBy', 'lpgPrice'])
                     ->when(
                         ! $user?->isOwnerPusat() && ! $user?->isRegionalLeader(),
                         fn($q) => $q->where('branch_id', $user?->branch_id)
@@ -177,6 +195,17 @@ class DailySaleResource extends Resource
                 Tables\Columns\TextColumn::make('selling_price')
                     ->label('Price/Unit')
                     ->formatStateUsing(fn($state) => 'Rp ' . number_format($state, 0, ',', '.')),
+
+                Tables\Columns\TextColumn::make('lpgPrice.id')
+                    ->label('LPG Price #')
+                    ->placeholder('Legacy')
+                    ->toggleable(),
+
+                Tables\Columns\TextColumn::make('lpgPrice.effective_date')
+                    ->label('Price Effective')
+                    ->date('d M Y')
+                    ->placeholder('—')
+                    ->toggleable(isToggledHiddenByDefault: true),
 
                 Tables\Columns\TextColumn::make('total_revenue')
                     ->label('Total Revenue')

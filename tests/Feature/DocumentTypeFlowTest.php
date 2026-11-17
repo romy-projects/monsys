@@ -6,7 +6,10 @@ use App\Models\Branch;
 use App\Models\DeliveryOrder;
 use App\Models\StockClose;
 use App\Models\User;
+use App\Filament\Resources\DeliveryOrderResource;
+use App\Filament\Resources\PurchaseOrderResource;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 class DocumentTypeFlowTest extends TestCase
@@ -55,7 +58,7 @@ class DocumentTypeFlowTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function pusat_can_create_sales_order_to_pertamina(): void
     {
         $this->actingAs($this->pusat, 'sanctum');
@@ -74,7 +77,7 @@ class DocumentTypeFlowTest extends TestCase
             ->assertJsonPath('data.counterparty_name', 'Pertamina Patra Niaga');
     }
 
-    /** @test */
+    #[Test]
     public function branch_owner_cannot_create_sales_order(): void
     {
         $this->actingAs($this->branchOwner, 'sanctum');
@@ -89,7 +92,7 @@ class DocumentTypeFlowTest extends TestCase
         $response->assertStatus(403);
     }
 
-    /** @test */
+    #[Test]
     public function branch_owner_can_create_purchase_order_to_main_branch(): void
     {
         $this->actingAs($this->branchOwner, 'sanctum');
@@ -112,16 +115,25 @@ class DocumentTypeFlowTest extends TestCase
             'order_date'       => '2026-08-10',
             'cylinder_type'    => '3kg',
             'quantity_ordered' => 50,
+            'destination_branch_id' => $this->mainBranch->id,
         ]);
 
         $response->assertStatus(201)
             ->assertJsonPath('data.document_type', 'po')
             ->assertJsonPath('data.counterparty_type', 'branch')
-            ->assertJsonPath('data.destination_branch.id', $this->otherBranch->id);
+            ->assertJsonPath('data.destination_branch.id', $this->otherBranch->id)
+            ->assertJsonPath('data.requested_by', $this->branchOwner->name);
+
+        $this->assertDatabaseHas('delivery_orders', [
+            'do_number' => 'PO2026-001',
+            'origin_branch_id' => $this->mainBranch->id,
+            'destination_branch_id' => $this->otherBranch->id,
+            'requested_by' => $this->branchOwner->id,
+        ]);
     }
 
-    /** @test */
-    public function pusat_cannot_create_purchase_order(): void
+    #[Test]
+    public function pusat_can_create_a_purchase_order_for_a_selected_branch(): void
     {
         $this->actingAs($this->pusat, 'sanctum');
 
@@ -130,12 +142,91 @@ class DocumentTypeFlowTest extends TestCase
             'order_date'       => '2026-08-10',
             'cylinder_type'    => '3kg',
             'quantity_ordered' => 50,
+            'destination_branch_id' => $this->otherBranch->id,
+        ]);
+
+        $response->assertStatus(201)
+            ->assertJsonPath('data.document_type', 'po')
+            ->assertJsonPath('data.destination_branch.id', $this->otherBranch->id)
+            ->assertJsonPath('data.requested_by', $this->pusat->name);
+
+        $this->assertDatabaseHas('delivery_orders', [
+            'do_number' => 'PO2026-002',
+            'origin_branch_id' => $this->mainBranch->id,
+            'destination_branch_id' => $this->otherBranch->id,
+            'requested_by' => $this->pusat->id,
+            'counterparty_name' => $this->mainBranch->name,
+        ]);
+    }
+
+    #[Test]
+    public function hq_cannot_create_a_purchase_order_for_the_hq_branch_itself(): void
+    {
+        $this->actingAs($this->pusat, 'sanctum')
+            ->postJson('/api/v1/purchase-orders', [
+                'order_date' => '2026-08-10',
+                'cylinder_type' => '3kg',
+                'quantity_ordered' => 50,
+                'destination_branch_id' => $this->mainBranch->id,
+            ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('destination_branch_id');
+    }
+
+    #[Test]
+    public function regional_leader_cannot_create_purchase_orders(): void
+    {
+        $regionalLeader = User::create([
+            'name'      => 'Regional Leader',
+            'email'     => 'regional@test.com',
+            'password'  => bcrypt('password'),
+            'role'      => 'regional_leader',
+            'branch_id' => $this->mainBranch->id,
+            'status'    => 'active',
+        ]);
+
+        $this->actingAs($regionalLeader, 'sanctum');
+        $this->assertFalse(PurchaseOrderResource::canCreate());
+
+        $response = $this->postJson('/api/v1/purchase-orders', [
+            'order_date'       => '2026-08-10',
+            'cylinder_type'    => '3kg',
+            'quantity_ordered' => 50,
+            'destination_branch_id' => $this->otherBranch->id,
         ]);
 
         $response->assertStatus(403);
     }
 
-    /** @test */
+    #[Test]
+    public function hq_must_select_an_active_destination_branch_for_a_purchase_order(): void
+    {
+        $response = $this->actingAs($this->pusat, 'sanctum')
+            ->postJson('/api/v1/purchase-orders', [
+                'order_date'       => '2026-08-10',
+                'cylinder_type'    => '3kg',
+                'quantity_ordered' => 50,
+            ]);
+
+        $response->assertStatus(422)
+            ->assertJsonValidationErrors('destination_branch_id');
+    }
+
+    #[Test]
+    public function delivery_order_menu_is_hidden_while_its_resource_access_remains(): void
+    {
+        $this->actingAs($this->pusat);
+
+        $this->assertFalse(DeliveryOrderResource::shouldRegisterNavigation());
+        $this->assertTrue(DeliveryOrderResource::canAccess());
+        $this->assertTrue(PurchaseOrderResource::canCreate());
+        $this->assertTrue(PurchaseOrderResource::shouldRegisterNavigation());
+
+        $this->actingAs($this->branchOwner);
+        $this->assertTrue(PurchaseOrderResource::canCreate());
+    }
+
+    #[Test]
     public function approved_so_auto_creates_do(): void
     {
         $so = DeliveryOrder::create([
@@ -163,8 +254,8 @@ class DocumentTypeFlowTest extends TestCase
         ]);
     }
 
-    /** @test */
-    public function approved_po_auto_creates_do(): void
+    #[Test]
+    public function approved_po_does_not_create_do(): void
     {
         $po = DeliveryOrder::create([
             'do_number'          => 'PO2026-003',
@@ -186,13 +277,17 @@ class DocumentTypeFlowTest extends TestCase
             'approved_at' => now(),
         ]);
 
-        $this->assertDatabaseHas('delivery_orders', [
-            'document_type' => 'do',
-            'po_number'     => 'PO2026-003',
-        ]);
+        $this->assertSame(1, DeliveryOrder::purchaseOrders()->count());
+        $this->assertSame(0, DeliveryOrder::deliveryOrders()->count());
+
+        $notification = \Illuminate\Support\Facades\DB::table('notifications')
+            ->where('notifiable_id', $this->branchOwner->id)
+            ->orderByDesc('created_at')
+            ->first();
+        $this->assertStringContainsString('Track fulfillment on this PO.', json_decode($notification->data, true)['body']);
     }
 
-    /** @test */
+    #[Test]
     public function delivery_order_index_defaults_to_do_only(): void
     {
         DeliveryOrder::create([
@@ -228,7 +323,7 @@ class DocumentTypeFlowTest extends TestCase
             ->assertJsonPath('data.0.document_type', 'do');
     }
 
-    /** @test */
+    #[Test]
     public function branch_user_cannot_access_delivery_orders_api(): void
     {
         $this->actingAs($this->branchOwner, 'sanctum');
@@ -238,7 +333,7 @@ class DocumentTypeFlowTest extends TestCase
         $response->assertStatus(403);
     }
 
-    /** @test */
+    #[Test]
     public function branch_user_only_sees_their_own_purchase_orders(): void
     {
         // Create a PO for the other branch (owned by branchOwner)

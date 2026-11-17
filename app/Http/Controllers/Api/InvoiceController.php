@@ -6,10 +6,12 @@ use App\Http\Controllers\Controller;
 use App\Http\Traits\ApiResponse;
 use App\Models\Invoice;
 use App\Services\DocumentNumberService;
+use App\Support\InvoicePricing;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\ValidationException;
 
 class InvoiceController extends Controller
 {
@@ -22,7 +24,7 @@ class InvoiceController extends Controller
     public function index(Request $request): JsonResponse
     {
         $user = auth()->user();
-        $query = Invoice::with(['branch', 'customer']);
+        $query = Invoice::with(['branch', 'customer', 'lpgPrice']);
 
         if (! $user->isOwnerPusat() && ! $user->isRegionalLeader()) {
             $query->where('branch_id', $user->branch_id);
@@ -44,6 +46,13 @@ class InvoiceController extends Controller
             'customer'       => $inv->customer?->name,
             'cylinder_type'  => $inv->cylinder_type,
             'quantity'       => $inv->quantity,
+            'unit_price'     => (float) $inv->unit_price,
+            'lpg_price_id'   => $inv->lpg_price_id,
+            'lpg_price'      => $inv->lpgPrice ? [
+                'id' => $inv->lpgPrice->id,
+                'branch_id' => $inv->lpgPrice->branch_id,
+                'effective_date' => $inv->lpgPrice->effective_date?->toDateString(),
+            ] : null,
             'total_amount'   => (float) $inv->total_amount,
             'paid_amount'    => (float) $inv->paid_amount,
             'balance'        => $inv->balance,
@@ -65,17 +74,45 @@ class InvoiceController extends Controller
             return $this->forbidden('You may only create invoices for your own branch.');
         }
 
-        $data = Validator::make($request->all(), [
+        $validator = Validator::make($request->all(), [
             'branch_id'     => 'required|exists:branches,id',
             'customer_id'   => 'nullable|exists:customers,id',
+            'reference_type' => 'sometimes|in:branch,customer',
+            'reference_id'   => 'nullable|integer',
             'cylinder_type' => 'required|in:3kg,5.5kg,12kg,50kg',
             'quantity'      => 'required|integer|min:1',
-            'unit_price'    => 'required|numeric|min:0',
+            'unit_price'    => 'sometimes|numeric|min:0',
             'issue_date'    => 'required|date',
             'due_date'      => 'required|date|after_or_equal:issue_date',
             'notes'         => 'nullable|string',
-        ])->validated();
+        ]);
+        $validator->after(function ($validator) use ($request): void {
+            $type = $request->input('reference_type');
+            $referenceId = $request->input('reference_id');
 
+            if ($type === 'branch' && (! $referenceId || ! \App\Models\Branch::whereKey($referenceId)->exists())) {
+                $validator->errors()->add('reference_id', 'Select a valid destination branch.');
+            } elseif ($type === 'customer' && $referenceId !== null && ! \App\Models\Customer::whereKey($referenceId)->exists()) {
+                $validator->errors()->add('reference_id', 'Select a valid customer.');
+            } elseif ($type === 'customer' && ! $referenceId) {
+                $validator->errors()->add('reference_id', 'Select a customer.');
+            }
+        });
+        $data = $validator->validate();
+
+        $price = InvoicePricing::requiredPrice($data);
+        $this->assertSubmittedPriceMatches($data['unit_price'] ?? null, (float) $price->selling_price, $price->id);
+
+        if (isset($data['reference_type'])) {
+            if ($data['reference_type'] === 'customer') {
+                $data['customer_id'] = $data['reference_id'];
+            } else {
+                $data['customer_id'] = null;
+            }
+        }
+
+        $data['lpg_price_id'] = $price->id;
+        $data['unit_price'] = $price->selling_price;
         $data['total_amount'] = (int) $data['quantity'] * (float) $data['unit_price'];
         $data['created_by']   = $user->id;
         $data['status']       = 'draft';
@@ -88,7 +125,7 @@ class InvoiceController extends Controller
             return Invoice::create($data);
         });
 
-        return $this->created($invoice->fresh(['branch', 'customer']));
+        return $this->created($invoice->fresh(['branch', 'customer', 'lpgPrice']));
     }
 
     public function show(Invoice $invoice): JsonResponse
@@ -98,7 +135,7 @@ class InvoiceController extends Controller
             return $this->forbidden();
         }
 
-        return $this->success($invoice->load(['branch', 'customer']));
+        return $this->success($invoice->load(['branch', 'customer', 'lpgPrice']));
     }
 
     public function update(Request $request, Invoice $invoice): JsonResponse
@@ -112,15 +149,58 @@ class InvoiceController extends Controller
             return $this->error('Cannot modify invoice with status: ' . $invoice->status, 422);
         }
 
-        $data = Validator::make($request->all(), [
+        $validator = Validator::make($request->all(), [
             'cylinder_type' => 'sometimes|in:3kg,5.5kg,12kg,50kg',
             'quantity'      => 'sometimes|integer|min:1',
             'unit_price'    => 'sometimes|numeric|min:0',
             'issue_date'    => 'sometimes|date',
             'due_date'      => 'sometimes|date',
+            'reference_type' => 'sometimes|in:branch,customer',
+            'reference_id'   => 'sometimes|nullable|integer',
             'status'        => 'sometimes|in:draft,issued,cancelled',
             'notes'         => 'nullable|string',
-        ])->validated();
+        ]);
+        $validator->after(function ($validator) use ($request, $invoice): void {
+            $type = $request->input('reference_type', $invoice->reference_type);
+            $referenceId = $request->input('reference_id', $invoice->reference_id);
+
+            if ($type === 'branch' && (! $referenceId || ! \App\Models\Branch::whereKey($referenceId)->exists())) {
+                $validator->errors()->add('reference_id', 'Select a valid destination branch.');
+            } elseif ($type === 'customer' && $referenceId !== null && ! \App\Models\Customer::whereKey($referenceId)->exists()) {
+                $validator->errors()->add('reference_id', 'Select a valid customer.');
+            }
+        });
+        $data = $validator->validate();
+
+        $submittedPrice = $data['unit_price'] ?? null;
+        unset($data['unit_price']);
+
+        $priceInputsChanged = isset($data['cylinder_type'])
+            || isset($data['issue_date'])
+            || isset($data['reference_type'])
+            || isset($data['reference_id']);
+        if ($priceInputsChanged) {
+            $pricingData = array_merge([
+                'branch_id' => $invoice->branch_id,
+                'reference_type' => $invoice->reference_type,
+                'reference_id' => $invoice->reference_id,
+                'cylinder_type' => $invoice->cylinder_type,
+                'issue_date' => $invoice->issue_date->toDateString(),
+            ], $data);
+            $price = InvoicePricing::requiredPrice($pricingData);
+            $this->assertSubmittedPriceMatches($submittedPrice, (float) $price->selling_price, $price->id);
+
+            $data['lpg_price_id'] = $price->id;
+            $data['unit_price'] = $price->selling_price;
+        } elseif ($submittedPrice !== null) {
+            $this->assertSubmittedPriceMatches($submittedPrice, (float) $invoice->unit_price, (int) $invoice->lpg_price_id);
+        }
+
+        if (isset($data['reference_type'])) {
+            $referenceId = $data['reference_id'] ?? $invoice->reference_id;
+            $data['reference_id'] = $referenceId;
+            $data['customer_id'] = $data['reference_type'] === 'customer' ? $referenceId : null;
+        }
 
         if (isset($data['quantity']) || isset($data['unit_price'])) {
             $qty  = $data['quantity'] ?? $invoice->quantity;
@@ -130,7 +210,7 @@ class InvoiceController extends Controller
 
         $invoice->update($data);
 
-        return $this->success($invoice->fresh(['branch', 'customer']));
+        return $this->success($invoice->fresh(['branch', 'customer', 'lpgPrice']));
     }
 
     public function destroy(Invoice $invoice): JsonResponse
@@ -168,7 +248,7 @@ class InvoiceController extends Controller
         $invoice->save();
         $invoice->recalculateStatus();
 
-        return $this->success($invoice->fresh(['branch', 'customer']), 'Payment recorded.');
+        return $this->success($invoice->fresh(['branch', 'customer', 'lpgPrice']), 'Payment recorded.');
     }
 
     /** Issue a draft invoice. */
@@ -186,6 +266,15 @@ class InvoiceController extends Controller
 
         $invoice->update(['status' => 'issued']);
 
-        return $this->success($invoice->fresh(['branch', 'customer']), 'Invoice issued.');
+        return $this->success($invoice->fresh(['branch', 'customer', 'lpgPrice']), 'Invoice issued.');
+    }
+
+    private function assertSubmittedPriceMatches(mixed $submittedPrice, float $effectivePrice, int $priceId): void
+    {
+        if ($submittedPrice !== null && number_format((float) $submittedPrice, 2, '.', '') !== number_format($effectivePrice, 2, '.', '')) {
+            throw ValidationException::withMessages([
+                'unit_price' => "Unit price is controlled by LPG Price #{$priceId}. Use the effective LPG Price for this invoice.",
+            ]);
+        }
     }
 }

@@ -100,7 +100,7 @@ class ProfitLossReport extends Page
         $allSalesInPeriod = DailySale::query()
             ->whereBetween('sale_date', [$startDate, $endDate])
             ->when($branchId, fn($q) => $q->where('branch_id', $branchId))
-            ->select(['sale_date', 'cylinder_type', 'quantity'])
+            ->select(['branch_id', 'sale_date', 'cylinder_type', 'quantity', 'lpg_price_id', 'purchase_price_at_sale'])
             ->get();
 
         $totalHpp = LpgPrice::totalHppForSales($allSalesInPeriod, $branchId);

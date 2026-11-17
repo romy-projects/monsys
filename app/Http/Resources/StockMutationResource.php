@@ -11,6 +11,7 @@ class StockMutationResource extends JsonResource
     {
         return [
             'id'                  => $this->id,
+            'purchase_order_id'   => $this->purchase_order_id,
             'branch_id'           => $this->branch_id,
             'branch_name'         => $this->whenLoaded('branch', fn () => $this->branch?->name),
             'source_branch_id'    => $this->source_branch_id,

@@ -11,6 +11,7 @@ class LpgPriceResource extends JsonResource
     {
         return [
             'id'             => $this->id,
+            'branch_id'      => $this->branch_id,
             'cylinder_type'  => $this->cylinder_type,
             'purchase_price' => (float) $this->purchase_price,
             'selling_price'  => (float) $this->selling_price,

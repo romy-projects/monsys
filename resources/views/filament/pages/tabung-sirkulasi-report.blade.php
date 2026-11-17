@@ -6,7 +6,7 @@
     $result   = $ledger['result'];
     $totals   = $ledger['totals'];
     $count    = $ledger['count'];
-    $isMulti  = auth()->user()->isOwnerPusat() || auth()->user()->isRegionalLeader();
+    $isMulti  = auth()->user()->isOwnerPusat();
 @endphp
 
 <div class="space-y-6">
@@ -113,10 +113,10 @@
                 <tr>
                     <td colspan="3" class="px-4 py-3 font-bold text-gray-900 dark:text-white">Saldo Akhir</td>
                     <td class="px-4 py-3 text-center font-bold text-green-700 dark:text-green-400">
-                        {{ number_format($data['entries']->where('direction', 'debit')->sum('quantity')) }}
+                        {{ number_format($data['debit_total']) }}
                     </td>
                     <td class="px-4 py-3 text-center font-bold text-red-700 dark:text-red-400">
-                        {{ number_format($data['entries']->where('direction', 'kredit')->sum('quantity')) }}
+                        {{ number_format($data['credit_total']) }}
                     </td>
                     <td class="px-4 py-3 text-center font-bold text-gray-900 dark:text-white">
                         {{ number_format($data['balance']) }}

@@ -10,6 +10,7 @@ use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Model;
 
 class StockItemResource extends Resource
 {
@@ -34,6 +35,7 @@ class StockItemResource extends Resource
     public static function form(Form $form): Form
     {
         $user = auth()->user();
+        $isBranchUser = $user && ! $user->isOwnerPusat() && ! $user->isRegionalLeader();
 
         return $form->schema([
             Forms\Components\Section::make('Stock Snapshot')
@@ -42,13 +44,15 @@ class StockItemResource extends Resource
                     Forms\Components\Select::make('branch_id')
                         ->label('Branch / Cabang')
                         ->options(
-                            $user?->isOwnerPusat() || $user?->isRegionalLeader()
+                            ! $isBranchUser
                                 ? Branch::active()->pluck('name', 'id')
                                 : Branch::where('id', $user?->branch_id)->pluck('name', 'id')
                         )
                         ->default($user?->branch_id)
                         ->required()
                         ->searchable()
+                        ->disabled($isBranchUser)
+                        ->dehydrated()
                         ->columnSpan(1),
 
                     Forms\Components\Select::make('cylinder_type')
@@ -165,14 +169,15 @@ class StockItemResource extends Resource
                     ]),
             ])
             ->actions([
-                Tables\Actions\EditAction::make(),
+                Tables\Actions\EditAction::make()
+                    ->visible(fn (StockItem $record) => static::canEdit($record)),
                 Tables\Actions\DeleteAction::make()
-                    ->visible(fn () => $user?->isOwnerPusat()),
+                    ->visible(fn (StockItem $record) => static::canDelete($record)),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make()
-                        ->visible(fn () => $user?->isOwnerPusat()),
+                        ->visible(fn () => static::canCreate()),
                 ]),
             ])
             ->defaultSort('recorded_at', 'desc');
@@ -190,5 +195,30 @@ class StockItemResource extends Resource
             'create' => Pages\CreateStockItem::route('/create'),
             'edit'   => Pages\EditStockItem::route('/{record}/edit'),
         ];
+    }
+
+    public static function canCreate(): bool
+    {
+        $user = auth()->user();
+
+        return $user &&
+            ! $user->isOwnerPusat() &&
+            ! $user->isRegionalLeader() &&
+            $user->branch_id !== null;
+    }
+
+    public static function canEdit(Model $record): bool
+    {
+        $user = auth()->user();
+
+        return $user &&
+            ! $user->isOwnerPusat() &&
+            ! $user->isRegionalLeader() &&
+            $record->branch_id === $user->branch_id;
+    }
+
+    public static function canDelete(Model $record): bool
+    {
+        return static::canEdit($record);
     }
 }

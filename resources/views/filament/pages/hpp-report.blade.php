@@ -52,6 +52,7 @@
                     <tr>
                         <th class="px-4 py-3 text-left text-xs font-semibold uppercase text-gray-500">Type</th>
                         <th class="px-4 py-3 text-right text-xs font-semibold uppercase text-gray-500">Qty Sold</th>
+                        <th class="px-4 py-3 text-left text-xs font-semibold uppercase text-gray-500">LPG Price References</th>
                         <th class="px-4 py-3 text-right text-xs font-semibold uppercase text-gray-500">Price Start → End</th>
                         <th class="px-4 py-3 text-right text-xs font-semibold uppercase text-gray-500">Total HPP</th>
                         <th class="px-4 py-3 text-right text-xs font-semibold uppercase text-gray-500">Revenue</th>
@@ -73,8 +74,27 @@
                         <td class="px-4 py-3 text-right text-gray-700 dark:text-gray-300">
                             {{ $row['qty_sold'] > 0 ? number_format($row['qty_sold']) : '—' }}
                         </td>
+                        <td class="px-4 py-3 text-left text-xs text-gray-500 dark:text-gray-400">
+                            @forelse($row['price_sources'] as $source)
+                                <div>
+                                    <span class="font-medium">{{ $source['branch_name'] }}:</span>
+                                    @if($source['price_ids']->isNotEmpty())
+                                        {{ $source['price_ids']->map(fn($id) => '#' . $id)->join(', ') }}
+                                    @endif
+                                    @if($source['unlinked_count'] > 0)
+                                        <span class="text-amber-600">
+                                            {{ $source['unlinked_count'] }} legacy/unlinked
+                                        </span>
+                                    @endif
+                                </div>
+                            @empty
+                                —
+                            @endforelse
+                        </td>
                         <td class="px-4 py-3 text-right text-gray-500 dark:text-gray-400">
-                            @if($row['has_price'])
+                            @if(! $d['branch_id'])
+                                Per branch; see price references
+                            @elseif($row['has_price'])
                                 {{ $fmt($row['purchase_price_start']) }}
                                 @if($row['purchase_price_start'] !== $row['purchase_price_end'])
                                     → <span class="text-orange-500 font-semibold">{{ $fmt($row['purchase_price_end']) }}</span>
@@ -113,6 +133,7 @@
                     <tr>
                         <td class="px-4 py-3 font-bold text-gray-900 dark:text-white">Total</td>
                         <td class="px-4 py-3 text-right font-bold text-gray-900 dark:text-white">{{ number_format($d['totals']['qty_sold']) }}</td>
+                        <td class="px-4 py-3"></td>
                         <td class="px-4 py-3"></td>
                         <td class="px-4 py-3 text-right font-bold text-red-700 dark:text-red-400">{{ $fmt($d['totals']['total_hpp']) }}</td>
                         <td class="px-4 py-3 text-right font-bold text-green-700 dark:text-green-400">{{ $fmt($d['totals']['total_revenue']) }}</td>

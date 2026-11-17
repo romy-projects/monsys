@@ -11,6 +11,7 @@ class CylinderCirculationResource extends JsonResource
     {
         return [
             'id'               => $this->id,
+            'purchase_order_id' => $this->purchase_order_id,
             'branch_id'        => $this->branch_id,
             'branch'           => $this->whenLoaded('branch', fn() => [
                 'id'   => $this->branch->id,

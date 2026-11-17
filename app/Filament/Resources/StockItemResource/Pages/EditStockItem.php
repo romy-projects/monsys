@@ -16,4 +16,13 @@ class EditStockItem extends EditRecord
             Actions\DeleteAction::make(),
         ];
     }
+
+    protected function mutateFormDataBeforeSave(array $data): array
+    {
+        abort_unless(StockItemResource::canEdit($this->record), 403);
+
+        $data['branch_id'] = $this->record->branch_id;
+
+        return $data;
+    }
 }

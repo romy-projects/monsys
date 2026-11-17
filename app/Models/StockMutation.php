@@ -14,6 +14,7 @@ class StockMutation extends Model
         'branch_id', 'source_branch_id', 'destination_branch_id',
         'cylinder_type', 'mutation_type', 'quantity',
         'reference_no', 'notes', 'mutation_date', 'created_by',
+        'purchase_order_id',
     ];
 
     protected $casts = ['mutation_date' => 'date'];
@@ -36,5 +37,10 @@ class StockMutation extends Model
     public function createdBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
+    }
+
+    public function purchaseOrder(): BelongsTo
+    {
+        return $this->belongsTo(DeliveryOrder::class, 'purchase_order_id');
     }
 }

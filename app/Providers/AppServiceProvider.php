@@ -5,8 +5,10 @@ namespace App\Providers;
 use App\Models\Branch;
 use App\Models\Customer;
 use App\Models\DeliveryOrder;
+use App\Models\LpgPrice;
 use App\Models\StockItem;
 use App\Observers\DeliveryOrderObserver;
+use App\Observers\LpgPriceObserver;
 use App\Observers\StockItemObserver;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Support\ServiceProvider;
@@ -22,6 +24,7 @@ class AppServiceProvider extends ServiceProvider
     {
         StockItem::observe(StockItemObserver::class);
         DeliveryOrder::observe(DeliveryOrderObserver::class);
+        LpgPrice::observe(LpgPriceObserver::class);
 
         // Morph map for Invoice polymorphic reference
         Relation::morphMap([

@@ -10,6 +10,9 @@ use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 
 class CylinderCirculationResource extends Resource
 {
@@ -36,18 +39,23 @@ class CylinderCirculationResource extends Resource
     public static function form(Form $form): Form
     {
         $user = auth()->user();
-        $isPusat = $user->isOwnerPusat() || $user->isRegionalLeader();
+        $isPusat = $user?->isOwnerPusat() ?? false;
 
         return $form->schema([
             Forms\Components\Section::make('Transaction Details')
                 ->schema([
                     Forms\Components\Select::make('branch_id')
                         ->label('Branch')
-                        ->options(Branch::where('status', 'active')->orderBy('name')->pluck('name', 'id'))
+                        ->options(
+                            $isPusat
+                                ? Branch::where('status', 'active')->orderBy('name')->pluck('name', 'id')
+                                : Branch::whereKey($user->branch_id)->pluck('name', 'id')
+                        )
                         ->searchable()
                         ->required()
                         ->default(fn() => $isPusat ? null : $user->branch_id)
                         ->disabled(fn() => ! $isPusat)
+                        ->dehydrated()
                         ->columnSpan(2),
 
                     Forms\Components\DatePicker::make('transaction_date')
@@ -56,7 +64,7 @@ class CylinderCirculationResource extends Resource
                         ->default(today()),
 
                     Forms\Components\TextInput::make('so_number')
-                        ->label('SO Number')
+                        ->label('SO/PO Reference')
                         ->nullable()
                         ->maxLength(100)
                         ->placeholder('e.g. SO-2026-001'),
@@ -125,7 +133,15 @@ class CylinderCirculationResource extends Resource
 
     public static function table(Table $table): Table
     {
+        $user = auth()->user();
+        $isPusat = $user?->isOwnerPusat();
+
         return $table
+            ->modifyQueryUsing(function (Builder $query) use ($user, $isPusat) {
+                if (! $isPusat && $user) {
+                    $query->where('branch_id', $user->branch_id);
+                }
+            })
             ->columns([
                 Tables\Columns\TextColumn::make('transaction_date')
                     ->label('Date')
@@ -133,7 +149,7 @@ class CylinderCirculationResource extends Resource
                     ->sortable(),
 
                 Tables\Columns\TextColumn::make('so_number')
-                    ->label('SO #')
+                    ->label('SO/PO #')
                     ->searchable()
                     ->placeholder('—'),
 
@@ -207,12 +223,17 @@ class CylinderCirculationResource extends Resource
                     ]),
             ])
             ->actions([
-                Tables\Actions\EditAction::make(),
-                Tables\Actions\DeleteAction::make(),
+                Tables\Actions\EditAction::make()
+                    ->visible(fn (CylinderCirculation $record) => static::canEdit($record)),
+                Tables\Actions\DeleteAction::make()
+                    ->visible(fn (CylinderCirculation $record) => static::canDelete($record)),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make(),
+                    Tables\Actions\DeleteBulkAction::make()
+                        ->using(fn (Collection $records) => $records
+                            ->whereNull('purchase_order_id')
+                            ->each(fn (CylinderCirculation $record) => $record->delete())),
                 ]),
             ]);
     }
@@ -242,12 +263,25 @@ class CylinderCirculationResource extends Resource
         if (! $user) {
             return false;
         }
-        // All active roles can access Tabung Sirkulasi
-        return in_array($user->role, ['owner_pusat', 'regional_leader', 'owner_cabang', 'staff_gudang']);
+        return $user->isOwnerPusat();
     }
 
     public static function canCreate(): bool
     {
-        return auth()->user()?->role !== 'staff_gudang';
+        $user = auth()->user();
+
+        return $user?->isOwnerPusat() ?? false;
+    }
+
+    public static function canEdit(Model $record): bool
+    {
+        $user = auth()->user();
+
+        return $record->purchase_order_id === null && ($user?->isOwnerPusat() ?? false);
+    }
+
+    public static function canDelete(Model $record): bool
+    {
+        return static::canEdit($record);
     }
 }

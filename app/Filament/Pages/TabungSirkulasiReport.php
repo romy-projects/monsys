@@ -34,22 +34,12 @@ class TabungSirkulasiReport extends Page
 
     public function mount(): void
     {
-        $user = auth()->user();
-
-        if (! $user?->isOwnerPusat() && ! $user?->isRegionalLeader()) {
-            $this->branch_id = $user->branch_id;
-        }
+        $this->branch_id = null;
     }
 
     public function getBranches(): Collection
     {
-        $user = auth()->user();
-
-        if ($user?->isOwnerPusat() || $user?->isRegionalLeader()) {
-            return Branch::where('status', 'active')->orderBy('name')->get();
-        }
-
-        return Branch::where('id', $user?->branch_id)->get();
+        return Branch::where('status', 'active')->orderBy('name')->get();
     }
 
     /**
@@ -68,8 +58,6 @@ class TabungSirkulasiReport extends Page
         // Branch filter
         if ($this->branch_id) {
             $query->where('branch_id', $this->branch_id);
-        } elseif (! auth()->user()?->isOwnerPusat() && ! auth()->user()?->isRegionalLeader()) {
-            $query->where('branch_id', auth()->user()?->branch_id);
         }
 
         // Cylinder type filter
@@ -101,13 +89,17 @@ class TabungSirkulasiReport extends Page
             $typeRecords = $grouped->get($type, collect());
             $balance = 0;
             $entries = [];
+            $debitTotal = 0;
+            $creditTotal = 0;
 
             foreach ($typeRecords as $record) {
                 $qty = (int) $record->quantity;
                 if ($record->direction === 'debit') {
                     $balance += $qty;
+                    $debitTotal += $qty;
                 } else {
                     $balance -= $qty;
+                    $creditTotal += $qty;
                 }
 
                 $entries[] = [
@@ -128,8 +120,10 @@ class TabungSirkulasiReport extends Page
             $runningBalances[$type] = max(0, $balance);
 
             $result[$type] = [
-                'entries' => $entries,
-                'balance' => max(0, $balance),
+                'entries'      => $entries,
+                'balance'      => max(0, $balance),
+                'debit_total'  => $debitTotal,
+                'credit_total' => $creditTotal,
             ];
         }
 
@@ -143,6 +137,6 @@ class TabungSirkulasiReport extends Page
 
     public static function canAccess(): bool
     {
-        return auth()->check();
+        return auth()->user()?->isOwnerPusat() ?? false;
     }
 }

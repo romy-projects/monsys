@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
@@ -104,6 +105,21 @@ class DeliveryOrder extends Model
     {
         return $this->hasOne(DeliveryOrder::class, 'po_number', 'do_number')
             ->where('document_type', 'do');
+    }
+
+    public function lpgPrices(): HasMany
+    {
+        return $this->hasMany(LpgPrice::class, 'purchase_order_id');
+    }
+
+    public function stockMutations(): HasMany
+    {
+        return $this->hasMany(StockMutation::class, 'purchase_order_id');
+    }
+
+    public function cylinderCirculation(): HasOne
+    {
+        return $this->hasOne(CylinderCirculation::class, 'purchase_order_id');
     }
 
     public function transportir(): BelongsTo

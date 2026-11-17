@@ -209,4 +209,9 @@ class OperationalCostResource extends Resource
     {
         return auth()->user()?->canViewFinance() ?? false;
     }
+
+    public static function shouldRegisterNavigation(): bool
+    {
+        return auth()->user()?->isOwnerPusat() ?? false;
+    }
 }

@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\PurchaseOrderResource\Pages;
 
 use App\Filament\Resources\PurchaseOrderResource;
+use App\Models\DeliveryOrder;
 use Filament\Actions;
 use Filament\Resources\Pages\EditRecord;
 
@@ -15,5 +16,20 @@ class EditPurchaseOrder extends EditRecord
         return [
             Actions\DeleteAction::make(),
         ];
+    }
+
+    protected function mutateFormDataBeforeSave(array $data): array
+    {
+        /** @var DeliveryOrder $record */
+        $record = $this->record;
+
+        $data['document_type'] = 'po';
+        $data['counterparty_type'] = 'branch';
+        $data['counterparty_name'] = $record->counterparty_name;
+        $data['destination_branch_id'] = $record->destination_branch_id;
+        $data['origin_branch_id'] = $record->origin_branch_id;
+        $data['requested_by'] = $record->requested_by;
+
+        return $data;
     }
 }

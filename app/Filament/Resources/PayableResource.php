@@ -111,7 +111,7 @@ class PayableResource extends Resource
 
     public static function table(Table $table): Table
     {
-        $fmt = fn($n) => 'Rp ' . number_format((float) $n, 0, ',', '.');
+        $fmt = fn($state) => 'Rp ' . number_format((float) $state, 0, ',', '.');
 
         return $table
             ->columns([
@@ -218,6 +218,11 @@ class PayableResource extends Resource
     public static function canAccess(): bool
     {
         return auth()->user()?->canViewFinance() ?? false;
+    }
+
+    public static function shouldRegisterNavigation(): bool
+    {
+        return auth()->user()?->isOwnerPusat() ?? false;
     }
 
     public static function canCreate(): bool

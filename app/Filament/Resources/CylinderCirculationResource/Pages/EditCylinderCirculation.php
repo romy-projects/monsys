@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\CylinderCirculationResource\Pages;
 
 use App\Filament\Resources\CylinderCirculationResource;
+use App\Models\CylinderCirculation;
 use Filament\Actions;
 use Filament\Resources\Pages\EditRecord;
 
@@ -15,5 +16,17 @@ class EditCylinderCirculation extends EditRecord
         return [
             Actions\DeleteAction::make(),
         ];
+    }
+
+    protected function mutateFormDataBeforeSave(array $data): array
+    {
+        /** @var CylinderCirculation $record */
+        $record = $this->record;
+
+        abort_unless(CylinderCirculationResource::canEdit($record), 403);
+
+        $data['branch_id'] = $record->branch_id;
+
+        return $data;
     }
 }

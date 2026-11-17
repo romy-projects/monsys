@@ -111,4 +111,9 @@ class ReceivablesAging extends Page
     {
         return auth()->user()?->canViewFinance() ?? false;
     }
+
+    public static function shouldRegisterNavigation(): bool
+    {
+        return auth()->user()?->isOwnerPusat() ?? false;
+    }
 }

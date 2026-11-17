@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\InvoiceResource\Pages;
 
 use App\Filament\Resources\InvoiceResource;
+use App\Support\InvoicePricing;
 use Filament\Actions;
 use Filament\Resources\Pages\EditRecord;
 
@@ -19,6 +20,10 @@ class EditInvoice extends EditRecord
 
     protected function mutateFormDataBeforeSave(array $data): array
     {
+        $price = InvoicePricing::requiredPrice($data);
+
+        $data['lpg_price_id'] = $price->id;
+        $data['unit_price'] = $price->selling_price;
         $data['total_amount'] = (int) ($data['quantity'] ?? 0) * (float) ($data['unit_price'] ?? 0);
 
         // Map polymorphic reference

@@ -8,6 +8,7 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
+use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 class DeliveryOrderReceiptTest extends TestCase
@@ -106,7 +107,7 @@ class DeliveryOrderReceiptTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function an_approver_can_upload_a_receipt_and_receives_a_public_url(): void
     {
         $this->actingAs($this->pusat, 'sanctum');
@@ -124,7 +125,7 @@ class DeliveryOrderReceiptTest extends TestCase
         $this->assertStringContainsString('do-receipts', $response->json('data.receipt_url'));
     }
 
-    /** @test */
+    #[Test]
     public function the_destination_branch_can_upload_its_own_receipt(): void
     {
         $this->actingAs($this->branchOwner, 'sanctum');
@@ -134,7 +135,7 @@ class DeliveryOrderReceiptTest extends TestCase
         ])->assertStatus(200);
     }
 
-    /** @test */
+    #[Test]
     public function the_destination_branch_warehouse_staff_can_upload_a_receipt(): void
     {
         $this->actingAs($this->branchStaff, 'sanctum');
@@ -144,7 +145,7 @@ class DeliveryOrderReceiptTest extends TestCase
         ])->assertStatus(200);
     }
 
-    /** @test */
+    #[Test]
     public function a_user_from_another_branch_cannot_upload_a_receipt(): void
     {
         $this->actingAs($this->otherBranchOwner, 'sanctum');
@@ -156,7 +157,7 @@ class DeliveryOrderReceiptTest extends TestCase
         $this->assertNull($this->deliveredDo->fresh()->receipt_path);
     }
 
-    /** @test */
+    #[Test]
     public function a_receipt_cannot_be_uploaded_for_a_draft_order(): void
     {
         $draft = $this->makeOrder('DO2026-002', 'draft');
@@ -168,7 +169,7 @@ class DeliveryOrderReceiptTest extends TestCase
         ])->assertStatus(422);
     }
 
-    /** @test */
+    #[Test]
     public function a_receipt_file_is_required(): void
     {
         $this->actingAs($this->pusat, 'sanctum');
@@ -178,7 +179,7 @@ class DeliveryOrderReceiptTest extends TestCase
             ->assertJsonValidationErrors('receipt');
     }
 
-    /** @test */
+    #[Test]
     public function a_receipt_rejects_disallowed_file_types(): void
     {
         $this->actingAs($this->pusat, 'sanctum');
@@ -189,7 +190,7 @@ class DeliveryOrderReceiptTest extends TestCase
             ->assertJsonValidationErrors('receipt');
     }
 
-    /** @test */
+    #[Test]
     public function a_receipt_rejects_files_larger_than_two_megabytes(): void
     {
         $this->actingAs($this->pusat, 'sanctum');

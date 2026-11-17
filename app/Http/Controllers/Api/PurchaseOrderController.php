@@ -11,6 +11,7 @@ use App\Models\StockClose;
 use App\Services\DocumentNumberService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 use Illuminate\Support\Facades\DB;
 
 class PurchaseOrderController extends Controller
@@ -21,14 +22,12 @@ class PurchaseOrderController extends Controller
     {
     }
 
-    /**
-     * List Purchase Orders (PO) — Other Branches requesting Tabung from Main Branch.
-     */
+    /** List Purchase Orders requesting goods from HQ for a branch. */
     public function index(Request $request): JsonResponse
     {
         $user  = $request->user();
         $query = DeliveryOrder::purchaseOrders()
-            ->with(['originBranch', 'destinationBranch', 'transportir', 'expedition', 'vehicle']);
+            ->with(['originBranch', 'destinationBranch', 'transportir', 'expedition', 'vehicle', 'requestedBy']);
 
         if (! $user->isOwnerPusat() && ! $user->isRegionalLeader()) {
             $query->where('destination_branch_id', $user->branch_id);
@@ -63,30 +62,39 @@ class PurchaseOrderController extends Controller
         );
     }
 
-    /**
-     * Create a Purchase Order (PO) from an Other Branch to Main Branch.
-     */
+    /** Create a Purchase Order from HQ to its selected requesting branch. */
     public function store(Request $request): JsonResponse
     {
         $user = $request->user();
 
-        // Only Other Branch users can create POs — Pusat/Regional cannot
-        if ($user->isOwnerPusat() || $user->isRegionalLeader()) {
-            return $this->forbidden('Only Other Branch users can create Purchase Orders.');
+        if (! $user->isOwnerPusat() && ! $user->canCreatePurchaseOrder()) {
+            return $this->forbidden('You cannot create Purchase Orders.');
         }
 
-        // Golden rule: branch staff must submit stock close first
-        if (! StockClose::isTodaySubmitted($user->branch_id)) {
+        // Branch users must submit stock close first; HQ creates on a branch's behalf.
+        if (! $user->isOwnerPusat() && ! StockClose::isTodaySubmitted($user->branch_id)) {
             return $this->error("Today's stock close must be submitted before creating a Purchase Order.", 422);
         }
 
         $mainBranch = Branch::mainBranch()->first();
+
+        if (! $mainBranch) {
+            return $this->error('The HQ branch is not configured.', 422);
+        }
 
         $data = $request->validate([
             'do_number'         => ['nullable', 'string', 'max:50', 'unique:delivery_orders,do_number'],
             'order_date'        => ['required', 'date'],
             'cylinder_type'     => ['required', 'in:3kg,5.5kg,12kg,50kg'],
             'quantity_ordered'  => ['required', 'integer', 'min:1'],
+            'destination_branch_id' => $user->isOwnerPusat()
+                ? [
+                    'required',
+                    'integer',
+                    Rule::exists('branches', 'id')->where('status', 'active'),
+                    Rule::notIn([$mainBranch->id]),
+                ]
+                : ['nullable', 'integer'],
             'counterparty_name' => ['nullable', 'string', 'max:200'],
             'transportir_id'    => ['nullable', 'exists:transportirs,id'],
             'expedition_id'     => ['nullable', 'exists:expeditions,id'],
@@ -99,9 +107,11 @@ class PurchaseOrderController extends Controller
 
         $data['document_type']     = 'po';
         $data['counterparty_type'] = 'branch';
-        $data['counterparty_name'] = $data['counterparty_name'] ?? $mainBranch?->name;
+        $data['counterparty_name'] = $mainBranch->name;
         $data['origin_branch_id']  = $mainBranch?->id;
-        $data['destination_branch_id'] = $user->branch_id;
+        $data['destination_branch_id'] = $user->isOwnerPusat()
+            ? $data['destination_branch_id']
+            : $user->branch_id;
         $data['requested_by']      = $user->id;
         $data['status']            = 'draft';
 
@@ -114,7 +124,7 @@ class PurchaseOrderController extends Controller
         });
 
         return $this->created(
-            new DeliveryOrderResource($po->load('originBranch', 'destinationBranch', 'transportir', 'expedition', 'vehicle'))
+            new DeliveryOrderResource($po->load('originBranch', 'destinationBranch', 'transportir', 'expedition', 'vehicle', 'requestedBy'))
         );
     }
 
@@ -125,6 +135,9 @@ class PurchaseOrderController extends Controller
     {
         $user = $request->user();
 
+        if (! $this->canManage($user, $deliveryOrder)) {
+            return $this->forbidden();
+        }
         if ($deliveryOrder->document_type !== 'po') {
             return $this->error('Not a Purchase Order.', 422);
         }
@@ -135,7 +148,6 @@ class PurchaseOrderController extends Controller
         $data = $request->validate([
             'cylinder_type'     => ['sometimes', 'in:3kg,5.5kg,12kg,50kg'],
             'quantity_ordered'  => ['sometimes', 'integer', 'min:1'],
-            'counterparty_name' => ['nullable', 'string', 'max:200'],
             'transportir_id'    => ['nullable', 'exists:transportirs,id'],
             'expedition_id'     => ['nullable', 'exists:expeditions,id'],
             'vehicle_id'        => ['nullable', 'exists:vehicles,id'],
@@ -155,6 +167,9 @@ class PurchaseOrderController extends Controller
      */
     public function submit(DeliveryOrder $deliveryOrder, Request $request): JsonResponse
     {
+        if (! $this->canManage($request->user(), $deliveryOrder)) {
+            return $this->forbidden();
+        }
         if ($deliveryOrder->document_type !== 'po') {
             return $this->error('Not a Purchase Order.', 422);
         }
@@ -220,6 +235,12 @@ class PurchaseOrderController extends Controller
      */
     public function receive(DeliveryOrder $deliveryOrder, Request $request): JsonResponse
     {
+        $user = $request->user();
+
+        if (! $user->canCreatePurchaseOrder() ||
+            $deliveryOrder->destination_branch_id !== $user->branch_id) {
+            return $this->forbidden();
+        }
         if ($deliveryOrder->document_type !== 'po') {
             return $this->error('Not a Purchase Order.', 422);
         }
@@ -266,6 +287,9 @@ class PurchaseOrderController extends Controller
     {
         $user = $request->user();
 
+        if (! $this->canManage($user, $deliveryOrder)) {
+            return $this->forbidden();
+        }
         if ($deliveryOrder->document_type !== 'po') {
             return $this->error('Not a Purchase Order.', 422);
         }
@@ -278,11 +302,22 @@ class PurchaseOrderController extends Controller
         return $this->noContent();
     }
 
-    private function authorizeView($user, DeliveryOrder $do): void
+    private function canManage($user, DeliveryOrder $po): bool
     {
-        if ($user->isOwnerPusat() || $user->isRegionalLeader()) return;
-        if ($do->origin_branch_id === $user->branch_id) return;
-        if ($do->destination_branch_id === $user->branch_id) return;
+        return $user->isOwnerPusat() ||
+            ($user->canCreatePurchaseOrder() && $po->destination_branch_id === $user->branch_id);
+    }
+
+    private function authorizeView($user, DeliveryOrder $po): void
+    {
+        if ($user->isOwnerPusat() || $user->isRegionalLeader()) {
+            return;
+        }
+
+        if ($po->document_type === 'po' && $po->destination_branch_id === $user->branch_id) {
+            return;
+        }
+
         abort(403);
     }
 }
