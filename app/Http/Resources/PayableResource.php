@@ -28,7 +28,9 @@ class PayableResource extends JsonResource
             'balance'        => (float) $this->balance,
             'due_date'       => $this->due_date?->toDateString(),
             'status'         => $this->status,
+            'payment_state'  => $this->payment_state,
             'paid_at'        => $this->paid_at?->toDateTimeString(),
+            'payments'       => PayablePaymentResource::collection($this->whenLoaded('payments')),
             'created_at'     => $this->created_at?->toDateTimeString(),
         ];
     }

@@ -9,7 +9,7 @@ use Filament\Widgets\TableWidget as BaseWidget;
 
 class PendingDoWidget extends BaseWidget
 {
-    protected static ?string $heading = '🚛 Pending Delivery Orders / DO Menunggu Persetujuan';
+    protected static ?string $heading = '🚛 Pending Purchase Orders / PO Menunggu Persetujuan';
 
     protected static ?int $sort = 4;
 
@@ -19,7 +19,8 @@ class PendingDoWidget extends BaseWidget
     {
         return $table
             ->query(
-                DeliveryOrder::with(['originBranch', 'destinationBranch', 'expedition'])
+                DeliveryOrder::purchaseOrders()
+                    ->with(['originBranch', 'destinationBranch', 'expedition'])
                     ->where('status', 'pending_approval')
                     ->latest('order_date')
             )

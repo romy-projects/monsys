@@ -4,7 +4,9 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Http\Traits\ApiResponse;
+use App\Models\DeliveryOrder;
 use App\Models\Invoice;
+use App\Models\TransportirRate;
 use App\Services\DocumentNumberService;
 use App\Support\InvoicePricing;
 use Illuminate\Http\JsonResponse;
@@ -84,6 +86,7 @@ class InvoiceController extends Controller
             'unit_price'    => 'sometimes|numeric|min:0',
             'issue_date'    => 'required|date',
             'due_date'      => 'required|date|after_or_equal:issue_date',
+            'loading_order_number' => 'nullable|string|max:100',
             'notes'         => 'nullable|string',
         ]);
         $validator->after(function ($validator) use ($request): void {
@@ -114,6 +117,11 @@ class InvoiceController extends Controller
         $data['lpg_price_id'] = $price->id;
         $data['unit_price'] = $price->selling_price;
         $data['total_amount'] = (int) $data['quantity'] * (float) $data['unit_price'];
+
+        // BALI-14: snapshot the transportir rate / expedition fee of the linked
+        // LO and, when configured, add the delivery fee to the invoice total.
+        $data = $this->applyTransportCosts($data);
+
         $data['created_by']   = $user->id;
         $data['status']       = 'draft';
 
@@ -205,7 +213,8 @@ class InvoiceController extends Controller
         if (isset($data['quantity']) || isset($data['unit_price'])) {
             $qty  = $data['quantity'] ?? $invoice->quantity;
             $unit = $data['unit_price'] ?? $invoice->unit_price;
-            $data['total_amount'] = (int) $qty * (float) $unit;
+            // Keep any delivery fee already charged on this invoice.
+            $data['total_amount'] = (int) $qty * (float) $unit + (float) ($invoice->expedition_fee_amount ?? 0);
         }
 
         $invoice->update($data);
@@ -267,6 +276,60 @@ class InvoiceController extends Controller
         $invoice->update(['status' => 'issued']);
 
         return $this->success($invoice->fresh(['branch', 'customer', 'lpgPrice']), 'Invoice issued.');
+    }
+
+    /**
+     * BALI-14: record the transportir rate and the expedition delivery fee used
+     * for this invoice, and add the fee to the total only when the branch is the
+     * one paying for it (config app.expedition_fee_charged_to_buyer).
+     *
+     * Invoices without a linked LO keep today's behaviour: no snapshot, no fee.
+     *
+     * @param  array<string, mixed>  $data
+     * @return array<string, mixed>
+     */
+    private function applyTransportCosts(array $data): array
+    {
+        $loNumber = $data['loading_order_number'] ?? null;
+
+        $lo = $loNumber
+            ? DeliveryOrder::loadingOrders()->where('do_number', $loNumber)->first()
+            : null;
+
+        if (! $lo) {
+            return array_merge($data, [
+                'transportir_rate_at_sale' => null,
+                'expedition_cost_at_sale'  => null,
+                'expedition_fee_amount'    => 0,
+            ]);
+        }
+
+        // A Transportir LO never shares its expedition cost: expeditionFee() is 0.
+        $fee = $lo->expeditionFee();
+
+        $rate = $lo->transportir_id
+            ? TransportirRate::amountAtDate(
+                (int) $lo->transportir_id,
+                (string) ($data['cylinder_type'] ?? $lo->cylinder_type),
+                ($data['issue_date'] ?? null) ?: today()->toDateString()
+            )
+            : 0.0;
+
+        // The fee may only be passed on to the branch that actually received the goods.
+        $sameBranch = (int) $lo->destination_branch_id === (int) ($data['branch_id'] ?? 0);
+        $charge = $sameBranch
+            && $fee > 0
+            && (bool) config('app.expedition_fee_charged_to_buyer', false);
+
+        $data['transportir_rate_at_sale'] = $rate;
+        $data['expedition_cost_at_sale']  = $fee;
+        $data['expedition_fee_amount']    = $charge ? $fee : 0;
+
+        if ($charge) {
+            $data['total_amount'] = (float) $data['total_amount'] + $fee;
+        }
+
+        return $data;
     }
 
     private function assertSubmittedPriceMatches(mixed $submittedPrice, float $effectivePrice, int $priceId): void

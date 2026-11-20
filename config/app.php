@@ -138,4 +138,19 @@ return [
 
     'branch_shipment_tracking' => env('BRANCH_SHIPMENT_TRACKING', false),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Expedition delivery fee charged to the buyer
+    |--------------------------------------------------------------------------
+    |
+    | BALI-14: when HQ/Pusat bears the expedition cost (Expedition LO), decide
+    | whether that delivery fee is passed through to the branch/pangkalan as an
+    | extra line on the invoice (true) or absorbed by HQ and left out of the
+    | invoice total (false, default). Either way the fee is recorded on the LO
+    | and snapshotted onto the invoice, so toggling this needs no migration.
+    |
+    */
+
+    'expedition_fee_charged_to_buyer' => env('EXPEDITION_FEE_CHARGED_TO_BUYER', false),
+
 ];

@@ -219,6 +219,8 @@ class DocumentTypeFlowTest extends TestCase
 
         $this->assertFalse(DeliveryOrderResource::shouldRegisterNavigation());
         $this->assertTrue(DeliveryOrderResource::canAccess());
+        // N-GEN-7: legacy DOs are read-only history.
+        $this->assertFalse(DeliveryOrderResource::canCreate());
         $this->assertTrue(PurchaseOrderResource::canCreate());
         $this->assertTrue(PurchaseOrderResource::shouldRegisterNavigation());
 
@@ -227,7 +229,7 @@ class DocumentTypeFlowTest extends TestCase
     }
 
     #[Test]
-    public function approved_so_auto_creates_do(): void
+    public function approved_so_does_not_create_do(): void
     {
         $so = DeliveryOrder::create([
             'do_number'          => 'SO2026-003',
@@ -248,9 +250,11 @@ class DocumentTypeFlowTest extends TestCase
             'approved_at' => now(),
         ]);
 
-        $this->assertDatabaseHas('delivery_orders', [
+        // N-GEN-7: the DO flow is retired — approving an SO must not spawn a Delivery Order.
+        $this->assertSame(1, DeliveryOrder::salesOrders()->count());
+        $this->assertSame(0, DeliveryOrder::deliveryOrders()->count());
+        $this->assertDatabaseMissing('delivery_orders', [
             'document_type' => 'do',
-            'so_number'     => 'SO2026-003',
         ]);
     }
 
@@ -380,5 +384,80 @@ class DocumentTypeFlowTest extends TestCase
         $response->assertStatus(200)
             ->assertJsonCount(1, 'data')
             ->assertJsonPath('data.0.do_number', 'PO2026-004');
+    }
+
+    #[Test]
+    public function delivery_order_write_endpoints_are_gone(): void
+    {
+        $legacyDo = DeliveryOrder::create([
+            'do_number'             => 'DO2026-001',
+            'document_type'         => 'do',
+            'origin_branch_id'      => $this->mainBranch->id,
+            'destination_branch_id' => $this->otherBranch->id,
+            'cylinder_type'         => '3kg',
+            'quantity_ordered'      => 50,
+            'order_date'            => '2026-08-10',
+            'requested_by'          => $this->pusat->id,
+            'status'                => 'draft',
+        ]);
+
+        $this->actingAs($this->pusat, 'sanctum');
+
+        // N-GEN-7: only index/show remain — no create, no workflow transitions.
+        $this->postJson('/api/v1/delivery-orders', [])->assertStatus(405);
+        $this->postJson("/api/v1/delivery-orders/{$legacyDo->id}/submit")->assertStatus(404);
+        $this->postJson("/api/v1/delivery-orders/{$legacyDo->id}/approve")->assertStatus(404);
+        $this->postJson("/api/v1/delivery-orders/{$legacyDo->id}/mark-in-transit")->assertStatus(404);
+        $this->deleteJson("/api/v1/delivery-orders/{$legacyDo->id}")->assertStatus(405);
+
+        $this->getJson("/api/v1/delivery-orders/{$legacyDo->id}")->assertStatus(200);
+    }
+
+    #[Test]
+    public function dashboard_counts_po_and_lo_but_not_legacy_do(): void
+    {
+        // A legacy DO left in an active status must not inflate the live counters.
+        DeliveryOrder::create([
+            'do_number'             => 'DO2026-010',
+            'document_type'         => 'do',
+            'origin_branch_id'      => $this->mainBranch->id,
+            'destination_branch_id' => $this->otherBranch->id,
+            'cylinder_type'         => '3kg',
+            'quantity_ordered'      => 50,
+            'order_date'            => '2026-08-10',
+            'requested_by'          => $this->branchOwner->id,
+            'status'                => 'approved',
+        ]);
+
+        DeliveryOrder::create([
+            'do_number'             => 'PO2026-010',
+            'document_type'         => 'po',
+            'counterparty_type'     => 'branch',
+            'origin_branch_id'      => $this->mainBranch->id,
+            'destination_branch_id' => $this->otherBranch->id,
+            'cylinder_type'         => '3kg',
+            'quantity_ordered'      => 50,
+            'order_date'            => '2026-08-10',
+            'requested_by'          => $this->branchOwner->id,
+            'status'                => 'approved',
+        ]);
+
+        DeliveryOrder::create([
+            'do_number'             => 'LO2026-010',
+            'document_type'         => 'lo',
+            'origin_branch_id'      => $this->mainBranch->id,
+            'destination_branch_id' => $this->otherBranch->id,
+            'cylinder_type'         => '3kg',
+            'quantity_ordered'      => 50,
+            'order_date'            => '2026-08-10',
+            'requested_by'          => $this->branchOwner->id,
+            'status'                => 'approved',
+        ]);
+
+        $this->actingAs($this->pusat, 'sanctum');
+
+        $this->getJson('/api/v1/dashboard/main')
+            ->assertStatus(200)
+            ->assertJsonPath('data.stats.active_do_count', 2);
     }
 }

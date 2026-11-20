@@ -183,7 +183,7 @@ class DocumentNumberAllocationTest extends TestCase
     }
 
     #[Test]
-    public function auto_created_do_from_an_approved_so_gets_a_server_number(): void
+    public function approved_so_does_not_consume_a_do_number(): void
     {
         $so = DeliveryOrder::create([
             'do_number'         => 'SO2026-900',
@@ -204,10 +204,11 @@ class DocumentNumberAllocationTest extends TestCase
             'approved_at' => now(),
         ]);
 
-        $this->assertDatabaseHas('delivery_orders', [
-            'document_type' => 'do',
-            'so_number'     => 'SO2026-900',
-            'do_number'     => "DO{$this->year}-001",
-        ]);
+        // N-GEN-7: no DO is created, so the 'do' series must not advance either.
+        $this->assertSame(0, DeliveryOrder::deliveryOrders()->count());
+        $this->assertSame(0, (int) \Illuminate\Support\Facades\DB::table('document_sequences')
+            ->where('document_type', 'do')
+            ->where('year', $this->year)
+            ->value('last_number'));
     }
 }

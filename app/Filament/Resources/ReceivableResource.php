@@ -5,13 +5,17 @@ namespace App\Filament\Resources;
 use App\Filament\Resources\ReceivableResource\Pages;
 use App\Models\Branch;
 use App\Models\Receivable;
+use App\Models\ReceivablePayment;
+use App\Services\PaymentLedger;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Forms\Get;
+use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Validation\ValidationException;
 
 class ReceivableResource extends Resource
 {
@@ -215,36 +219,93 @@ class ReceivableResource extends Resource
             ])
             ->actions([
                 Tables\Actions\Action::make('record_payment')
-                    ->label('Record Payment')
+                    ->label('Catat Pembayaran')
                     ->icon('heroicon-o-banknotes')
                     ->color('success')
-                    ->visible(fn(Receivable $record) => $record->status !== 'paid')
-                    ->form([
-                        Forms\Components\TextInput::make('payment_amount')
-                            ->label('Payment Amount (Rp)')
+                    ->visible(fn(Receivable $record) => $record->balance > 0)
+                    ->form(fn(Receivable $record): array => [
+                        Forms\Components\DatePicker::make('paid_on')
+                            ->label('Tanggal Bayar')
+                            ->default(today())
+                            ->required(),
+                        Forms\Components\TextInput::make('amount')
+                            ->label('Jumlah (Rp)')
                             ->numeric()
                             ->prefix('Rp')
                             ->minValue(0.01)
+                            ->maxValue((float) $record->balance)
+                            ->helperText('Sisa piutang: Rp ' . number_format((float) $record->balance, 0, ',', '.'))
                             ->required(),
-                        Forms\Components\Textarea::make('payment_note')
-                            ->label('Note')
-                            ->nullable()
-                            ->rows(2),
+                        Forms\Components\Select::make('method')
+                            ->label('Metode')
+                            ->options(ReceivablePayment::methods())
+                            ->default('cash')
+                            ->required(),
+                        Forms\Components\TextInput::make('reference_no')
+                            ->label('No. Referensi')
+                            ->maxLength(100)
+                            ->nullable(),
+                        Forms\Components\Textarea::make('notes')
+                            ->label('Catatan')
+                            ->rows(2)
+                            ->nullable(),
                     ])
                     ->action(function (Receivable $record, array $data) {
-                        $record->paid_amount = min(
-                            (float) $record->amount,
-                            (float) $record->paid_amount + (float) $data['payment_amount']
-                        );
-
-                        if (! empty($data['payment_note'])) {
-                            $record->notes = trim(($record->notes ?? '') . "\n[Payment] " . $data['payment_note']);
+                        try {
+                            app(PaymentLedger::class)->recordReceivable($record, $data, auth()->id());
+                        } catch (ValidationException $e) {
+                            Notification::make()
+                                ->title('Pembayaran gagal dicatat')
+                                ->body(collect($e->errors())->flatten()->first())
+                                ->danger()
+                                ->send();
                         }
-
-                        $record->save();
-                        $record->recalculateStatus();
                     })
-                    ->modalHeading('Record Payment'),
+                    ->modalHeading('Catat Pembayaran Piutang')
+                    ->successNotificationTitle('Pembayaran dicatat'),
+
+                Tables\Actions\Action::make('payments')
+                    ->label('Riwayat')
+                    ->icon('heroicon-o-list-bullet')
+                    ->color('gray')
+                    ->visible(fn(Receivable $record) => $record->payments()->exists())
+                    ->modalHeading(fn(Receivable $record) => 'Riwayat Pembayaran - ' . $record->buyer_name)
+                    ->modalContent(fn(Receivable $record) => view('filament.finance.payment-history', [
+                        'payments' => $record->payments()->with('createdBy')->orderByDesc('paid_on')->orderByDesc('id')->get(),
+                    ]))
+                    ->modalSubmitAction(false)
+                    ->modalCancelActionLabel('Tutup'),
+
+                Tables\Actions\Action::make('void_payment')
+                    ->label('Batalkan Pembayaran')
+                    ->icon('heroicon-o-arrow-uturn-left')
+                    ->color('danger')
+                    ->visible(fn(Receivable $record) => (auth()->user()?->isOwnerPusat() ?? false) && $record->payments()->exists())
+                    ->form(fn(Receivable $record): array => [
+                        Forms\Components\Select::make('payment_id')
+                            ->label('Pembayaran yang dibatalkan')
+                            ->options($record->payments()
+                                ->orderByDesc('paid_on')
+                                ->orderByDesc('id')
+                                ->get()
+                                ->mapWithKeys(fn(ReceivablePayment $payment) => [
+                                    $payment->id => $payment->paid_on?->format('d M Y')
+                                        . ' - Rp ' . number_format((float) $payment->amount, 0, ',', '.')
+                                        . ' (' . $payment->method_label . ')',
+                                ]))
+                            ->required(),
+                    ])
+                    ->action(function (Receivable $record, array $data) {
+                        $payment = $record->payments()->find($data['payment_id']);
+
+                        if ($payment) {
+                            app(PaymentLedger::class)->reverseReceivablePayment($payment);
+                        }
+                    })
+                    ->requiresConfirmation()
+                    ->modalHeading('Batalkan pembayaran?')
+                    ->modalDescription('Baris pembayaran dihapus dan total paid_amount dihitung ulang.')
+                    ->successNotificationTitle('Pembayaran dibatalkan'),
 
                 Tables\Actions\EditAction::make()
                     ->visible(fn(Receivable $record) => $record->status !== 'paid'),

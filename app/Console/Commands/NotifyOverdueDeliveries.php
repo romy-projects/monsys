@@ -14,7 +14,8 @@ class NotifyOverdueDeliveries extends Command
 
     public function handle(): int
     {
-        $overdue = DeliveryOrder::whereIn('status', ['approved', 'in_transit'])
+        $overdue = DeliveryOrder::whereIn('document_type', ['po', 'lo'])
+            ->whereIn('status', ['approved', 'in_transit'])
             ->whereNotNull('eta')
             ->where('eta', '<', today())
             ->with(['originBranch', 'destinationBranch'])

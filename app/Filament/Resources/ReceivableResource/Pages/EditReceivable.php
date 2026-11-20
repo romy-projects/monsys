@@ -13,6 +13,16 @@ class EditReceivable extends EditRecord
     protected function getHeaderActions(): array
     {
         return [
+            Actions\Action::make('payments')
+                ->label('Riwayat Pembayaran')
+                ->icon('heroicon-o-list-bullet')
+                ->color('gray')
+                ->modalContent(fn() => view('filament.finance.payment-history', [
+                    'payments' => $this->getRecord()->payments()->with('createdBy')->orderByDesc('paid_on')->orderByDesc('id')->get(),
+                ]))
+                ->modalSubmitAction(false)
+                ->modalCancelActionLabel('Tutup'),
+
             Actions\DeleteAction::make(),
         ];
     }

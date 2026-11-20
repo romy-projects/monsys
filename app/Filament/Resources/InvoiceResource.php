@@ -55,16 +55,15 @@ class InvoiceResource extends Resource
                         ->afterStateUpdated(fn(Forms\Get $get, Forms\Set $set) => LpgPriceFormState::sync($get, $set, 'unit_price'))
                         ->columnSpan(1),
 
+                    // Allocated server-side in handleRecordCreation() — the old
+                    // count()+1 default collided under concurrent creates (T11-09).
                     Forms\Components\TextInput::make('invoice_number')
                         ->label('Invoice Number')
-                        ->required()
+                        ->placeholder('Auto: INV2026-001')
+                        ->nullable()
                         ->unique(ignoreRecord: true)
                         ->maxLength(50)
-                        ->default(function () {
-                            $year  = date('Y');
-                            $count = Invoice::whereYear('created_at', $year)->count() + 1;
-                            return 'INV' . $year . '-' . str_pad($count, 3, '0', STR_PAD_LEFT);
-                        })
+                        ->helperText('Leave blank to allocate the next invoice number automatically.')
                         ->columnSpan(1),
 
                     // Reference: Pusat invoices target branches; Branch invoices target customers

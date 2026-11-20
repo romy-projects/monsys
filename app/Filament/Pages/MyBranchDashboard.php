@@ -42,11 +42,13 @@ class MyBranchDashboard extends Page
         $monthRevenue  = (float) DailySale::where('branch_id', $branchId)->whereBetween('sale_date', [now()->startOfMonth(), today()])->sum('total_revenue');
         $monthCosts    = (float) OperationalCost::where('branch_id', $branchId)->whereBetween('cost_date', [now()->startOfMonth(), today()])->sum('amount');
 
-        $pendingDOs = DeliveryOrder::where('destination_branch_id', $branchId)
+        $pendingDOs = DeliveryOrder::purchaseOrders()
+            ->where('destination_branch_id', $branchId)
             ->where('status', 'pending_approval')
             ->count();
 
-        $inTransitDOs = DeliveryOrder::with(['originBranch', 'expedition'])
+        $inTransitDOs = DeliveryOrder::purchaseOrders()
+            ->with(['originBranch', 'expedition'])
             ->where('destination_branch_id', $branchId)
             ->whereIn('status', ['approved', 'in_transit'])
             ->orderByRaw('(eta IS NULL) ASC, eta ASC')

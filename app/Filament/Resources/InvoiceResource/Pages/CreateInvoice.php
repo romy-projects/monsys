@@ -4,8 +4,11 @@ namespace App\Filament\Resources\InvoiceResource\Pages;
 
 use App\Filament\Resources\InvoiceResource;
 use App\Models\Invoice;
+use App\Services\DocumentNumberService;
 use App\Support\InvoicePricing;
 use Filament\Resources\Pages\CreateRecord;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\DB;
 
 class CreateInvoice extends CreateRecord
 {
@@ -33,5 +36,19 @@ class CreateInvoice extends CreateRecord
         }
 
         return $data;
+    }
+
+    /**
+     * Allocate INV<year>-NNN inside the insert transaction (T11-09).
+     */
+    protected function handleRecordCreation(array $data): Model
+    {
+        return DB::transaction(function () use ($data): Model {
+            if (blank($data['invoice_number'] ?? null)) {
+                $data['invoice_number'] = app(DocumentNumberService::class)->next('inv');
+            }
+
+            return Invoice::create($data);
+        });
     }
 }

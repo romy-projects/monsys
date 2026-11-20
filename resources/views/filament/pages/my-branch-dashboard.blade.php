@@ -48,7 +48,7 @@
             <p class="mt-0.5 text-xs text-gray-500">Gross: {{ $fmt($d['monthRevenue'] - $d['monthCosts']) }}</p>
         </div>
         <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-900">
-            <p class="text-xs text-gray-500 dark:text-gray-400">Pending DOs</p>
+            <p class="text-xs text-gray-500 dark:text-gray-400">Pending POs</p>
             <p class="mt-1 text-xl font-bold {{ $d['pendingDOs'] > 0 ? 'text-warning-600 dark:text-warning-400' : 'text-gray-500' }}">
                 {{ $d['pendingDOs'] }} orders
             </p>

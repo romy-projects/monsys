@@ -52,17 +52,15 @@ class SalesOrderResource extends Resource
             Forms\Components\Section::make('Sales Order Details')
                 ->description('Order to Pertamina for Tabung supply')
                 ->schema([
+                    // Allocated server-side in handleRecordCreation() — the old
+                    // count()+1 default collided under concurrent creates (T11-09).
                     Forms\Components\TextInput::make('do_number')
                         ->label('SO Number')
-                        ->placeholder('e.g. SO2026-001')
-                        ->required()
+                        ->placeholder('Auto: SO2026-001')
+                        ->nullable()
                         ->unique(ignoreRecord: true)
                         ->maxLength(50)
-                        ->default(function () {
-                            $year  = date('Y');
-                            $count = DeliveryOrder::salesOrders()->whereYear('created_at', $year)->count() + 1;
-                            return 'SO' . $year . '-' . str_pad($count, 3, '0', STR_PAD_LEFT);
-                        })
+                        ->helperText('Leave blank to allocate the next SO number automatically.')
                         ->columnSpan(1),
 
                     Forms\Components\DatePicker::make('order_date')

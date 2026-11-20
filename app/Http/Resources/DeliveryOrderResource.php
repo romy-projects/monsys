@@ -17,6 +17,12 @@ class DeliveryOrderResource extends JsonResource
             'counterparty_name'  => $this->counterparty_name,
             'so_number'          => $this->so_number,
             'po_number'          => $this->po_number,
+            'lo_kind'            => $this->document_type === 'lo' ? ($this->lo_kind ?? 'transportir') : null,
+            'lo_kind_label'      => $this->lo_kind_label,
+            'transportir_lo_number' => $this->transportir_lo_number,
+            'cost_borne_by'      => $this->cost_borne_by,
+            'expedition_cost'    => $this->expedition_cost !== null ? (float) $this->expedition_cost : null,
+            'expedition_notes'   => $this->expedition_notes,
             'order_type'         => $this->order_type,
             'supplier_name'      => $this->supplier_name,
             'cylinder_type'      => $this->cylinder_type,
@@ -36,6 +42,7 @@ class DeliveryOrderResource extends JsonResource
             'origin_branch'      => $this->whenLoaded('originBranch', fn() => $this->order_type === 'supplier'
                 ? ['id' => null, 'name' => $this->supplier_name ?? 'Supplier']
                 : ['id' => $this->originBranch?->id, 'name' => $this->originBranch?->name]),
+            'destination_branch_id' => $this->destination_branch_id,
             'destination_branch' => $this->whenLoaded('destinationBranch', fn() => [
                 'id'   => $this->destinationBranch?->id,
                 'name' => $this->destinationBranch?->name,
@@ -43,6 +50,10 @@ class DeliveryOrderResource extends JsonResource
             'expedition'         => $this->whenLoaded('expedition', fn() => $this->expedition ? [
                 'id'   => $this->expedition->id,
                 'name' => $this->expedition->name,
+            ] : null),
+            'transportir'        => $this->whenLoaded('transportir', fn() => $this->transportir ? [
+                'id'   => $this->transportir->id,
+                'name' => $this->transportir->name,
             ] : null),
             'vehicle'            => $this->whenLoaded('vehicle', fn() => $this->vehicle ? [
                 'id'           => $this->vehicle->id,

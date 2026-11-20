@@ -17,16 +17,22 @@ class DeliveryOrder extends Model
     protected $fillable = [
         'do_number',
         'document_type',
+        'lo_kind',
         'counterparty_type',
         'counterparty_name',
         'so_number',
         'po_number',
+        'sales_order_id',
+        'transportir_lo_number',
         'order_type',
         'supplier_name',
         'origin_branch_id',
         'destination_branch_id',
         'transportir_id',
         'expedition_id',
+        'cost_borne_by',
+        'expedition_cost',
+        'expedition_notes',
         'vehicle_id',
         'transportir_name',
         'cylinder_type',
@@ -48,11 +54,12 @@ class DeliveryOrder extends Model
     ];
 
     protected $casts = [
-        'order_date'    => 'date',
-        'eta'           => 'date',
-        'loading_date'  => 'date',
-        'received_date' => 'date',
-        'approved_at'   => 'datetime',
+        'order_date'      => 'date',
+        'eta'             => 'date',
+        'loading_date'    => 'date',
+        'received_date'   => 'date',
+        'approved_at'     => 'datetime',
+        'expedition_cost' => 'decimal:2',
     ];
 
     // =========================================================
@@ -75,6 +82,19 @@ class DeliveryOrder extends Model
     public function scopeLoadingOrders(Builder $query): Builder
     {
         return $query->where('document_type', 'lo');
+    }
+
+    /** @return Builder Loading Orders where the transportir arranges its own expedition (BALI-11) */
+    public function scopeTransportirLoadingOrders(Builder $query): Builder
+    {
+        return $query->where('document_type', 'lo')
+            ->where(fn (Builder $q) => $q->where('lo_kind', 'transportir')->orWhereNull('lo_kind'));
+    }
+
+    /** @return Builder Loading Orders where HQ/Pusat arranges the expedition (BALI-11) */
+    public function scopeExpeditionLoadingOrders(Builder $query): Builder
+    {
+        return $query->where('document_type', 'lo')->where('lo_kind', 'expedition');
     }
 
     /** @return Builder Only Purchase Orders (PO) */
@@ -154,6 +174,37 @@ class DeliveryOrder extends Model
         return $this->belongsTo(User::class, 'loaded_by');
     }
 
+    /**
+     * The Transportir LO this Expedition LO continues (PO → LO Transportir → LO Expedition).
+     * Matched on the document number, same style as linkedDo().
+     */
+    public function transportirLo(): BelongsTo
+    {
+        return $this->belongsTo(DeliveryOrder::class, 'transportir_lo_number', 'do_number')
+            ->where('document_type', 'lo')
+            ->where('lo_kind', 'transportir');
+    }
+
+    /** Expedition LOs created against this Transportir LO. */
+    public function expeditionLos(): HasMany
+    {
+        return $this->hasMany(DeliveryOrder::class, 'transportir_lo_number', 'do_number')
+            ->where('document_type', 'lo')
+            ->where('lo_kind', 'expedition');
+    }
+
+    /** The Sales Order this LO/SO row belongs to (BALI-18). */
+    public function salesOrder(): BelongsTo
+    {
+        return $this->belongsTo(DeliveryOrder::class, 'sales_order_id');
+    }
+
+    /** Reconciliation produced when this LO was delivered (BALI-18). */
+    public function reconciliation(): HasOne
+    {
+        return $this->hasOne(CylinderReconciliation::class, 'loading_order_id');
+    }
+
     // =========================================================
     // Helpers
     // =========================================================
@@ -182,5 +233,46 @@ class DeliveryOrder extends Model
         }
 
         return null;
+    }
+
+    // =========================================================
+    // Loading Order kind (BALI-11 / BALI-12 / BALI-13)
+    // =========================================================
+
+    /** Whether this is a Transportir LO (transportir arranges its own expedition). */
+    public function isTransportirLoadingOrder(): bool
+    {
+        return $this->document_type === 'lo' && $this->lo_kind !== 'expedition';
+    }
+
+    /** Whether this is an Expedition LO (HQ/Pusat arranges the expedition). */
+    public function isExpeditionLoadingOrder(): bool
+    {
+        return $this->document_type === 'lo' && $this->lo_kind === 'expedition';
+    }
+
+    /** Get the display label for the Loading Order kind. */
+    public function getLoKindLabelAttribute(): ?string
+    {
+        if ($this->document_type !== 'lo') {
+            return null;
+        }
+
+        return $this->isExpeditionLoadingOrder() ? 'LO Expedisi' : 'LO Transportir';
+    }
+
+    /**
+     * Whether HQ/Pusat bears the expedition delivery fee for this LO.
+     * A Transportir LO never carries the fee — the transportir handles it itself.
+     */
+    public function bearsExpeditionCost(): bool
+    {
+        return $this->isExpeditionLoadingOrder() && $this->cost_borne_by === 'sum';
+    }
+
+    /** Delivery fee recorded on this LO (0 when the transportir bears it). */
+    public function expeditionFee(): float
+    {
+        return $this->bearsExpeditionCost() ? (float) ($this->expedition_cost ?? 0) : 0.0;
     }
 }

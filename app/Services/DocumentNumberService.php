@@ -25,19 +25,38 @@ class DocumentNumberService
 {
     /** Model + number column that owns each document type. */
     private const SOURCES = [
-        'so'  => [DeliveryOrder::class, 'do_number'],
-        'do'  => [DeliveryOrder::class, 'do_number'],
-        'lo'  => [DeliveryOrder::class, 'do_number'],
-        'po'  => [DeliveryOrder::class, 'do_number'],
-        'inv' => [Invoice::class, 'invoice_number'],
+        'so'   => [DeliveryOrder::class, 'do_number'],
+        'do'   => [DeliveryOrder::class, 'do_number'],
+        'lo'   => [DeliveryOrder::class, 'do_number'],
+        'lo_t' => [DeliveryOrder::class, 'do_number'],
+        'lo_e' => [DeliveryOrder::class, 'do_number'],
+        'po'   => [DeliveryOrder::class, 'do_number'],
+        'inv'  => [Invoice::class, 'invoice_number'],
+    ];
+
+    /**
+     * Number prefix per document type.
+     *
+     * Loading Orders keep separate series (BALI-11): LOT… for Transportir LOs,
+     * LOE… for Expedition LOs, so an Expedition LO can be read as continuing a
+     * specific Transportir LO.
+     */
+    private const PREFIXES = [
+        'so'   => 'SO',
+        'do'   => 'DO',
+        'lo'   => 'LO',
+        'lo_t' => 'LOT',
+        'lo_e' => 'LOE',
+        'po'   => 'PO',
+        'inv'  => 'INV',
     ];
 
     /**
      * Reserve and return the next number for a document type.
      *
-     * @param  string   $type  One of: so, do, lo, po, inv
+     * @param  string   $type  One of: so, do, lo, lo_t, lo_e, po, inv
      * @param  int|null $year  Defaults to the current year
-     * @return string          e.g. 'PO2026-001'
+     * @return string          e.g. 'PO2026-001', 'LOT2026-001', 'LOE2026-001'
      */
     public function next(string $type, ?int $year = null): string
     {
@@ -101,7 +120,9 @@ class DocumentNumberService
 
     private function format(string $type, int $year, int $number): string
     {
-        return strtoupper($type) . $year . '-' . str_pad((string) $number, 3, '0', STR_PAD_LEFT);
+        $prefix = self::PREFIXES[$type] ?? strtoupper($type);
+
+        return $prefix . $year . '-' . str_pad((string) $number, 3, '0', STR_PAD_LEFT);
     }
 
     private function isTaken(string $type, string $candidate): bool

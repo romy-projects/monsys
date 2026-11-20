@@ -7,9 +7,11 @@ use App\Models\Branch;
 use App\Models\DeliveryOrder;
 use App\Models\Expedition;
 use App\Models\Transportir;
+use App\Models\TransportirRate;
 use App\Models\Vehicle;
 use Filament\Forms;
 use Filament\Forms\Form;
+use Filament\Forms\Get;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
@@ -54,17 +56,15 @@ class PurchaseOrderResource extends Resource
             Forms\Components\Section::make('Purchase Order Details')
                 ->description('Request Tabung from Main Branch')
                 ->schema([
+                    // Allocated server-side in handleRecordCreation() — the old
+                    // count()+1 default collided under concurrent creates (T11-09).
                     Forms\Components\TextInput::make('do_number')
                         ->label('PO Number')
-                        ->placeholder('e.g. PO2026-001')
-                        ->required()
+                        ->placeholder('Auto: PO2026-001')
+                        ->nullable()
                         ->unique(ignoreRecord: true)
                         ->maxLength(50)
-                        ->default(function () {
-                            $year  = date('Y');
-                            $count = DeliveryOrder::purchaseOrders()->whereYear('created_at', $year)->count() + 1;
-                            return 'PO' . $year . '-' . str_pad($count, 3, '0', STR_PAD_LEFT);
-                        })
+                        ->helperText('Leave blank to allocate the next PO number automatically.')
                         ->columnSpan(1),
 
                     Forms\Components\DatePicker::make('order_date')
@@ -189,6 +189,25 @@ class PurchaseOrderResource extends Resource
                         ->columnSpan(1),
                 ])->columns(2),
 
+            // ----- Transportir rate (BALI-10) -----
+            Forms\Components\Section::make('Transporter Rate & Cost')
+                ->description('Fixed haulage rate for this PO. Read-only — maintained in Master Data → Transportir Rates.')
+                ->visible(fn (Get $get) => filled($get('transportir_id')))
+                ->schema([
+                    Forms\Components\Placeholder::make('transportir_rate_display')
+                        ->label('Rate per Cylinder / Tarif per Tabung')
+                        ->content(fn (Get $get) => self::money(
+                            self::transportirRate($get('transportir_id'), $get('cylinder_type'), $get('order_date'))
+                        )),
+
+                    Forms\Components\Placeholder::make('transportir_cost_display')
+                        ->label('Transportir Cost (rate × qty)')
+                        ->content(fn (Get $get) => self::money(
+                            self::transportirRate($get('transportir_id'), $get('cylinder_type'), $get('order_date'))
+                            * (int) ($get('quantity_ordered') ?? 0)
+                        )),
+                ])->columns(2),
+
             Forms\Components\Section::make('Notes')
                 ->schema([
                     Forms\Components\Textarea::make('notes')
@@ -243,6 +262,14 @@ class PurchaseOrderResource extends Resource
                 Tables\Columns\TextColumn::make('quantity_ordered')
                     ->label('Qty')
                     ->formatStateUsing(fn($state) => number_format($state) . ' pcs'),
+
+                Tables\Columns\TextColumn::make('transportir_id')
+                    ->label('Transportir Rate')
+                    ->formatStateUsing(fn ($state, DeliveryOrder $record) => filled($state)
+                        ? self::money(self::transportirRate((int) $state, $record->cylinder_type, $record->order_date))
+                        : '—')
+                    ->alignEnd()
+                    ->toggleable(),
 
                 Tables\Columns\TextColumn::make('status')
                     ->label('Status')
@@ -428,6 +455,26 @@ class PurchaseOrderResource extends Resource
             $record->status === 'draft' &&
             ($user?->isOwnerPusat() ||
                 ($user?->canCreatePurchaseOrder() && $record->destination_branch_id === $user->branch_id));
+    }
+
+    /**
+     * Rate (Rp per cylinder) for a transportir + cylinder type effective on the
+     * PO order date, or 0 when no rate is configured yet (BALI-10).
+     */
+    private static function transportirRate(?int $transportirId, ?string $cylinderType, mixed $date): float
+    {
+        if (! $transportirId || ! $cylinderType) {
+            return 0.0;
+        }
+
+        $on = $date instanceof \DateTimeInterface ? $date->format('Y-m-d') : ($date ?: today()->toDateString());
+
+        return TransportirRate::amountAtDate((int) $transportirId, $cylinderType, $on);
+    }
+
+    private static function money(float $amount): string
+    {
+        return 'Rp ' . number_format($amount, 0, ',', '.');
     }
 
     public static function getRelations(): array

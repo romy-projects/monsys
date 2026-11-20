@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Receivable extends Model
 {
@@ -46,6 +47,23 @@ class Receivable extends Model
     public function createdBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
+    }
+
+    /** BALI-16: every payment instalment recorded against this receivable. */
+    public function payments(): HasMany
+    {
+        return $this->hasMany(ReceivablePayment::class);
+    }
+
+    /**
+     * BALI-16: recompute paid_amount from the payment ledger so the header
+     * total can never drift from the payment history.
+     */
+    public function syncPaidFromLedger(): void
+    {
+        $this->paid_amount = (float) $this->payments()->sum('amount');
+        $this->saveQuietly();
+        $this->recalculateStatus();
     }
 
     /** Remaining unpaid balance. */

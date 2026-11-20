@@ -4,7 +4,10 @@ namespace App\Filament\Resources\PurchaseOrderResource\Pages;
 
 use App\Filament\Resources\PurchaseOrderResource;
 use App\Models\Branch;
+use App\Services\DocumentNumberService;
 use Filament\Resources\Pages\CreateRecord;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\DB;
 
 class CreatePurchaseOrder extends CreateRecord
 {
@@ -38,5 +41,21 @@ class CreatePurchaseOrder extends CreateRecord
         $data['requested_by']      = $user->id;
 
         return $data;
+    }
+
+    /**
+     * Allocate PO<year>-NNN inside the insert transaction. `next()` locks the
+     * counter row, so concurrent creates queue instead of colliding on the
+     * unique index of delivery_orders.do_number (T11-09).
+     */
+    protected function handleRecordCreation(array $data): Model
+    {
+        return DB::transaction(function () use ($data): Model {
+            if (blank($data['do_number'] ?? null)) {
+                $data['do_number'] = app(DocumentNumberService::class)->next('po');
+            }
+
+            return static::getModel()::create($data);
+        });
     }
 }

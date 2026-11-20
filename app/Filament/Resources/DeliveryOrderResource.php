@@ -40,12 +40,12 @@ class DeliveryOrderResource extends Resource
 
     public static function getModelLabel(): string
     {
-        return 'Delivery Order';
+        return 'Delivery Order (legacy)';
     }
 
     public static function getPluralModelLabel(): string
     {
-        return 'Delivery Orders';
+        return 'Delivery Orders (legacy)';
     }
 
     public static function form(Form $form): Form
@@ -64,11 +64,8 @@ class DeliveryOrderResource extends Resource
                         ->required()
                         ->unique(ignoreRecord: true)
                         ->maxLength(50)
-                        ->default(function () {
-                            $year  = date('Y');
-                            $count = DeliveryOrder::whereYear('created_at', $year)->count() + 1;
-                            return 'DO' . $year . '-' . str_pad($count, 3, '0', STR_PAD_LEFT);
-                        })
+                        // DO numbers are no longer generated: the flow is retired (N-GEN-7).
+                        ->helperText('Delivery Orders are retired — use Purchase/Loading Orders instead.')
                         ->columnSpan(1),
 
                     Forms\Components\DatePicker::make('order_date')
@@ -453,23 +450,26 @@ class DeliveryOrderResource extends Resource
                     )
                     ->requiresConfirmation(),
 
-                Tables\Actions\EditAction::make()
-                    ->visible(fn(DeliveryOrder $record) => $record->status === 'draft'),
             ])
-            ->bulkActions([
-                Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make(),
-                ]),
-            ])
+            // Bulk delete removed: legacy DO rows are immutable history (N-GEN-7).
+            ->bulkActions([])
             ->defaultSort('order_date', 'desc');
     }
 
-    /** Only Pusat/Regional can create DOs (branches use PO instead). */
+    /** Only legacy DO history is readable from this resource — no new DOs (N-GEN-7). */
     public static function canCreate(): bool
     {
-        $user = auth()->user();
+        return false;
+    }
 
-        return $user->isOwnerPusat() || $user->isRegionalLeader();
+    public static function canEdit($record): bool
+    {
+        return false;
+    }
+
+    public static function canDelete($record): bool
+    {
+        return false;
     }
 
     public static function getRelations(): array

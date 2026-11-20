@@ -32,6 +32,8 @@ return [
         'do_history'   => 'DO History',
         'so_request'   => 'Sales Order (SO)',
         'lo_request'   => 'Loading Order (LO)',
+        'lo_transportir' => 'LO Transportir',
+        'lo_expedition'  => 'LO Expedisi',
         'po_request'   => 'Purchase Order (PO)',
 
         // Sales
@@ -52,6 +54,7 @@ return [
         'master_branches'    => 'Branches',
         'master_expeditions' => 'Expeditions',
         'master_transportirs' => 'Transportirs',
+        'master_transportir_rates' => 'Transportir Rates',
         'master_prices'      => 'LPG Prices',
         'master_users'       => 'Users & Access',
         'customer'           => 'Customers',

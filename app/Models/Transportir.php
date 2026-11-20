@@ -23,6 +23,12 @@ class Transportir extends Model
         return $this->hasMany(DeliveryOrder::class);
     }
 
+    /** Effective-dated haulage rates (BALI-10). */
+    public function rates(): HasMany
+    {
+        return $this->hasMany(TransportirRate::class);
+    }
+
     public function vehicles(): HasMany
     {
         return $this->hasMany(Vehicle::class);
@@ -33,3 +39,4 @@ class Transportir extends Model
         return $this->hasMany(Payable::class);
     }
 }
+

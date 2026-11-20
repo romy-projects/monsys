@@ -32,8 +32,8 @@ class StatsOverviewWidget extends BaseWidget
             )
             ->sum('total_revenue');
 
-        // Pending DOs awaiting approval
-        $pendingDo = DeliveryOrder::query()
+        // Pending Purchase Orders awaiting approval (DO flow retired, N-GEN-7)
+        $pendingPo = DeliveryOrder::purchaseOrders()
             ->where('status', 'pending_approval')
             ->when(! $user?->isOwnerPusat() && ! $user?->isRegionalLeader(), fn ($q) =>
                 $q->where('destination_branch_id', $user?->branch_id)
@@ -59,10 +59,10 @@ class StatsOverviewWidget extends BaseWidget
                 ->color('success')
                 ->chart([12, 15, 14, 18, 20, 17, 22, 19]),
 
-            Stat::make('🚛 ' . __('app.pending_do'), $pendingDo . ' orders')
-                ->description('Delivery orders awaiting approval')
+            Stat::make('🚛 ' . __('app.pending_po'), $pendingPo . ' orders')
+                ->description('Purchase orders awaiting approval')
                 ->descriptionIcon('heroicon-m-clock')
-                ->color($pendingDo > 0 ? 'warning' : 'success'),
+                ->color($pendingPo > 0 ? 'warning' : 'success'),
 
             Stat::make('⚠️ ' . __('app.low_stock_branches'), $lowStockCount . ' branches')
                 ->description('Branches with < 50 full cylinders')

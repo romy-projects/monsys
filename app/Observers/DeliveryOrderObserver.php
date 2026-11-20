@@ -2,22 +2,17 @@
 
 namespace App\Observers;
 
-use App\Models\Branch;
 use App\Models\CylinderCirculation;
 use App\Models\DeliveryOrder;
 use App\Models\StockItem;
 use App\Models\StockMutation;
 use App\Models\User;
-use App\Services\DocumentNumberService;
+use App\Services\CylinderReconciliationService;
 use Filament\Notifications\Notification;
 use Illuminate\Support\Facades\DB;
 
 class DeliveryOrderObserver
 {
-    public function __construct(private readonly DocumentNumberService $documentNumbers)
-    {
-    }
-
     public function updated(DeliveryOrder $do): void
     {
         // Sync: shipment_status = delivered_to_destination → auto-transition do_status to delivered
@@ -43,45 +38,10 @@ class DeliveryOrderObserver
 
     private function handleApproved(DeliveryOrder $do): void
     {
+        // The Delivery Order (document_type = 'do') flow is retired (N-GEN-7).
+        // Approving an SO no longer spawns a DO: the canonical procurement flow is
+        // PO (branch requests HQ) → SO (HQ redeems at Pertamina) → LO (transportir/expedition).
         $this->notifyApproved($do);
-
-        // T7-17: SO approved → auto-create DO
-        if ($do->document_type === 'so') {
-            $this->createDeliveryOrderFromSo($do);
-        }
-
-    }
-
-    /**
-     * T7-17: When an SO is approved, auto-create a DO to Pertamina.
-     */
-    private function createDeliveryOrderFromSo(DeliveryOrder $so): void
-    {
-        $mainBranch = Branch::mainBranch()->first();
-
-        $doNumber = $this->documentNumbers->next('do');
-
-        DeliveryOrder::create([
-            'do_number'          => $doNumber,
-            'document_type'      => 'do',
-            'counterparty_type'  => 'pertamina',
-            'counterparty_name'  => $so->counterparty_name ?: 'Pertamina',
-            'so_number'          => $so->do_number,
-            'order_type'         => 'supplier',
-            'origin_branch_id'   => $mainBranch?->id,
-            'cylinder_type'      => $so->cylinder_type,
-            'quantity_ordered'   => $so->quantity_ordered,
-            'order_date'         => $so->order_date,
-            'eta'                => $so->eta,
-            'transportir_id'     => $so->transportir_id,
-            'expedition_id'      => $so->expedition_id,
-            'vehicle_id'         => $so->vehicle_id,
-            'transportir_name'   => $so->transportir_name,
-            'container_number'   => $so->container_number,
-            'notes'              => "Auto-created from SO #{$so->do_number}",
-            'requested_by'       => $so->requested_by,
-            'status'             => 'draft',
-        ]);
     }
 
     private function notifyPendingApproval(DeliveryOrder $do): void
@@ -156,6 +116,11 @@ class DeliveryOrderObserver
         if ($do->document_type === 'po') {
             $this->handlePurchaseOrderReceipt($do);
         } else {
+            if ($do->document_type === 'lo') {
+                // BALI-18: a delivered LO reconciles PO/SO/LO quantities (idempotent, BALI-22).
+                app(CylinderReconciliationService::class)->reconcile($do);
+            }
+
             // Preserve the established non-PO delivery workflows.
             $this->createStockMutations($do);
             $this->updateStockItems($do);

@@ -31,6 +31,8 @@ return [
         'do_history'   => 'Histori DO',
         'so_request'   => 'Sales Order (SO)',
         'lo_request'   => 'Loading Order (LO)',
+        'lo_transportir' => 'Loading Order Transportir',
+        'lo_expedition'  => 'Loading Order Expedisi',
         'po_request'   => 'Purchase Order (PO)',
 
         // Penjualan
@@ -48,6 +50,7 @@ return [
         'master_branches'    => 'Daftar Cabang',
         'master_expeditions' => 'Daftar Ekspedisi',
         'master_transportirs' => 'Daftar Transportir',
+        'master_transportir_rates' => 'Tarif Transportir',
         'master_prices'      => 'Harga Dasar LPG',
         'master_users'       => 'User & Akses',
 

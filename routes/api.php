@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\BranchPricingController;
 use App\Http\Controllers\Api\CostController;
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\DeliveryOrderController;
@@ -13,6 +14,7 @@ use App\Http\Controllers\Api\MasterDataController;
 use App\Http\Controllers\Api\CylinderCirculationController;
 use App\Http\Controllers\Api\PayableController;
 use App\Http\Controllers\Api\ReportController;
+use App\Http\Controllers\Api\ReconciliationController;
 use App\Http\Controllers\Api\SalesController;
 use App\Http\Controllers\Api\ScanController;
 use App\Http\Controllers\Api\StockController;
@@ -50,16 +52,17 @@ Route::group([], function () {
         Route::post('stock/close', [StockController::class, 'storeClose']);
         Route::get('stock/is-closed', [StockController::class, 'isTodayClosed']);
 
-        // Delivery Orders
-        Route::apiResource('delivery-orders', DeliveryOrderController::class);
-        Route::post('delivery-orders/{deliveryOrder}/submit', [DeliveryOrderController::class, 'submit']);
-        Route::post('delivery-orders/{deliveryOrder}/approve', [DeliveryOrderController::class, 'approve']);
-        Route::post('delivery-orders/{deliveryOrder}/mark-in-transit', [DeliveryOrderController::class, 'markInTransit']);
-        Route::post('delivery-orders/{deliveryOrder}/receive', [DeliveryOrderController::class, 'receive']);
-        Route::post('delivery-orders/{deliveryOrder}/cancel', [DeliveryOrderController::class, 'cancel']);
-        // Proof-of-delivery receipt. NOTE: only literal *GET* sub-paths must be declared before
-        // the apiResource above (they would be swallowed by show()); POST sub-paths are safe here.
-        Route::post('delivery-orders/{deliveryOrder}/receipt', [DeliveryOrderController::class, 'uploadReceipt']);
+        // Delivery Orders — LEGACY, read-only. The DO flow is retired (N-GEN-7); only
+        // index/show remain so historical documents stay readable (mobilex opens
+        // GET /delivery-orders). Create/update and the status workflow are gone.
+        // NOTE: only literal *GET* sub-paths would be swallowed by show(), so no extra care needed.
+        Route::get('delivery-orders', [DeliveryOrderController::class, 'index']);
+        Route::get('delivery-orders/{deliveryOrder}', [DeliveryOrderController::class, 'show']);
+
+        // BALI-18…22 — cylinder reconciliation (PO vs SO vs delivered LO)
+        Route::get('reconciliations', [ReconciliationController::class, 'index']);
+        Route::post('reconciliations', [ReconciliationController::class, 'store']);
+        Route::get('reconciliations/{reconciliation}', [ReconciliationController::class, 'show']);
 
         // Sales Orders (SO) — Main Branch to Pertamina
         Route::apiResource('sales-orders', SalesOrderController::class);
@@ -105,6 +108,8 @@ Route::group([], function () {
 
         Route::get('prices', [MasterDataController::class, 'prices']);
         Route::get('prices/current', [MasterDataController::class, 'currentPrices']);
+        // BALI-14: branch HPP / selling price after Transportir & Expedition costs.
+        Route::get('prices/branch-cost-preview', [BranchPricingController::class, 'show']);
         Route::post('prices', [MasterDataController::class, 'storePrice']);
 
         Route::get('customers', [MasterDataController::class, 'customers']);
@@ -144,6 +149,10 @@ Route::group([], function () {
         Route::put('payables/{payable}', [PayableController::class, 'update']);
         Route::delete('payables/{payable}', [PayableController::class, 'destroy']);
         Route::post('payables/{payable}/pay', [PayableController::class, 'pay']);
+        // BALI-17 payment ledger
+        Route::get('payables/{payable}/payments', [PayableController::class, 'payments']);
+        Route::post('payables/{payable}/payments', [PayableController::class, 'storePayment']);
+        Route::delete('payables/{payable}/payments/{payment}', [PayableController::class, 'destroyPayment']);
 
         // Cylinder Circulation
         // NOTE: 'summary' must be registered BEFORE the {cylinderCirculation}

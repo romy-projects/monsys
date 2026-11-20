@@ -18,9 +18,13 @@ class Invoice extends Model
         'reference_type',
         'reference_id',
         'lpg_price_id',
+        'loading_order_number',
         'cylinder_type',
         'quantity',
         'unit_price',
+        'transportir_rate_at_sale',
+        'expedition_cost_at_sale',
+        'expedition_fee_amount',
         'total_amount',
         'paid_amount',
         'issue_date',
@@ -31,12 +35,15 @@ class Invoice extends Model
     ];
 
     protected $casts = [
-        'issue_date'   => 'date',
-        'due_date'     => 'date',
-        'unit_price'   => 'decimal:2',
-        'total_amount' => 'decimal:2',
-        'paid_amount'  => 'decimal:2',
-        'quantity'     => 'integer',
+        'issue_date'               => 'date',
+        'due_date'                 => 'date',
+        'unit_price'               => 'decimal:2',
+        'transportir_rate_at_sale' => 'decimal:2',
+        'expedition_cost_at_sale'  => 'decimal:2',
+        'expedition_fee_amount'    => 'decimal:2',
+        'total_amount'             => 'decimal:2',
+        'paid_amount'              => 'decimal:2',
+        'quantity'                 => 'integer',
     ];
 
     public function branch(): BelongsTo

@@ -30,17 +30,17 @@ class LoadingOrderResource extends Resource
 
     public static function getNavigationLabel(): string
     {
-        return 'Loading Order (LO)';
+        return __('nav.item.lo_transportir');
     }
 
     public static function getModelLabel(): string
     {
-        return 'Loading Order';
+        return 'Loading Order Transportir';
     }
 
     public static function getPluralModelLabel(): string
     {
-        return 'Loading Orders';
+        return 'Loading Orders Transportir';
     }
 
     public static function form(Form $form): Form
@@ -51,19 +51,14 @@ class LoadingOrderResource extends Resource
 
         return $form->schema([
             Forms\Components\Section::make('Loading Order Details')
-                ->description('Loading instruction for Transportir to take Tabung to Pertamina')
+                ->description('Loading instruction for the Transportir to take Tabung from Pertamina. The Transportir arranges its own expedition and container.')
                 ->schema([
                     Forms\Components\TextInput::make('do_number')
                         ->label('LO Number')
-                        ->placeholder('e.g. LO2026-001')
-                        ->required()
+                        ->placeholder('Auto-generated on save (e.g. LOT2026-001)')
                         ->unique(ignoreRecord: true)
                         ->maxLength(50)
-                        ->default(function () {
-                            $year  = date('Y');
-                            $count = DeliveryOrder::loadingOrders()->whereYear('created_at', $year)->count() + 1;
-                            return 'LO' . $year . '-' . str_pad($count, 3, '0', STR_PAD_LEFT);
-                        })
+                        ->helperText('Left empty, the number is allocated server-side so concurrent users cannot collide.')
                         ->columnSpan(1),
 
                     Forms\Components\DatePicker::make('order_date')
@@ -90,11 +85,35 @@ class LoadingOrderResource extends Resource
                         ->minValue(1)
                         ->suffix('pcs')
                         ->columnSpan(1),
+
+                    Forms\Components\Select::make('po_number')
+                        ->label('Source PO Number / No. PO')
+                        ->options(fn () => DeliveryOrder::purchaseOrders()
+                            ->orderByDesc('order_date')
+                            ->limit(500)
+                            ->pluck('do_number', 'do_number'))
+                        ->searchable()
+                        ->required()
+                        ->helperText('Every Transportir LO must continue an approved Purchase Order.')
+                        ->columnSpan(1),
+
+                    Forms\Components\Select::make('destination_branch_id')
+                        ->label('Destination Branch / Pangkalan Tujuan')
+                        ->options(fn () => Branch::active()->orderBy('name')->pluck('name', 'id'))
+                        ->searchable()
+                        ->required()
+                        ->columnSpan(1),
                 ])->columns(2),
 
             // ----- Hidden auto-set fields -----
             Forms\Components\Hidden::make('document_type')
                 ->default('lo'),
+
+            Forms\Components\Hidden::make('lo_kind')
+                ->default('transportir'),
+
+            Forms\Components\Hidden::make('cost_borne_by')
+                ->default('transporter'),
 
             Forms\Components\Hidden::make('counterparty_type')
                 ->default('pertamina'),
@@ -144,7 +163,8 @@ class LoadingOrderResource extends Resource
                         ->label('Transportir')
                         ->options(Transportir::where('status', 'active')->orderBy('name')->pluck('name', 'id'))
                         ->searchable()
-                        ->nullable()
+                        ->required()
+                        ->helperText('The Transportir that will take the cylinders from Pertamina.')
                         ->columnSpan(1),
 
                     Forms\Components\Select::make('expedition_id')
@@ -152,6 +172,7 @@ class LoadingOrderResource extends Resource
                         ->options(Expedition::where('status', 'active')->pluck('name', 'id'))
                         ->searchable()
                         ->nullable()
+                        ->helperText('Optional — the Transportir reports its expedition after loading.')
                         ->columnSpan(1),
 
                     // Phase 9: Vehicle & Driver input hidden (not mandatory on LO).
@@ -179,6 +200,7 @@ class LoadingOrderResource extends Resource
                     Forms\Components\TextInput::make('container_number')
                         ->label('Container Number / No Kontainer')
                         ->nullable()
+                        ->helperText('Optional on a Transportir LO — filled in later via "Update Expedition Details".')
                         ->columnSpan(1),
 
                     Forms\Components\DatePicker::make('eta')
@@ -205,7 +227,7 @@ class LoadingOrderResource extends Resource
 
         return $table
             ->modifyQueryUsing(function (Builder $query) use ($user, $isPusat) {
-                $query->loadingOrders()->with(['originBranch', 'destinationBranch', 'expedition', 'loadedBy']);
+                $query->transportirLoadingOrders()->with(['originBranch', 'destinationBranch', 'expedition', 'transportir', 'loadedBy']);
 
                 if (! $isPusat && $user->branch_id) {
                     $query->where('origin_branch_id', $user->branch_id);
@@ -224,6 +246,21 @@ class LoadingOrderResource extends Resource
                     ->label('Source SO')
                     ->searchable(),
 
+                Tables\Columns\TextColumn::make('po_number')
+                    ->label('Source PO')
+                    ->searchable()
+                    ->placeholder('—'),
+
+                Tables\Columns\TextColumn::make('destinationBranch.name')
+                    ->label('To (Branch)')
+                    ->searchable()
+                    ->placeholder('—'),
+
+                Tables\Columns\TextColumn::make('transportir.name')
+                    ->label('Transportir')
+                    ->placeholder('—')
+                    ->toggleable(),
+
                 Tables\Columns\TextColumn::make('counterparty_name')
                     ->label('Pertamina')
                     ->searchable(),
@@ -236,6 +273,11 @@ class LoadingOrderResource extends Resource
                 Tables\Columns\TextColumn::make('quantity_ordered')
                     ->label('Qty')
                     ->formatStateUsing(fn($state) => number_format($state) . ' pcs'),
+
+                Tables\Columns\TextColumn::make('container_number')
+                    ->label('Container')
+                    ->placeholder('—')
+                    ->toggleable(),
 
                 Tables\Columns\TextColumn::make('loading_date')
                     ->label('Loading Date')
@@ -360,6 +402,36 @@ class LoadingOrderResource extends Resource
                     )
                     ->action(fn(DeliveryOrder $record) => $record->update(['status' => 'cancelled']))
                     ->requiresConfirmation(),
+
+                // Transportir reports its expedition + container after the LO is created (BALI-11).
+                Tables\Actions\Action::make('update_expedition_details')
+                    ->label('Update Expedition Details')
+                    ->icon('heroicon-o-truck')
+                    ->color('gray')
+                    ->visible(fn (DeliveryOrder $record) => $record->status !== 'cancelled'
+                        && auth()->user()?->canApproveOrders())
+                    ->form([
+                        Forms\Components\Select::make('expedition_id')
+                            ->label('Expedition / Ekspedisi')
+                            ->options(Expedition::where('status', 'active')->pluck('name', 'id'))
+                            ->searchable()
+                            ->nullable(),
+                        Forms\Components\TextInput::make('container_number')
+                            ->label('Container Number / No Kontainer')
+                            ->nullable(),
+                        Forms\Components\TextInput::make('transportir_name')
+                            ->label('Transportir Name (ad-hoc)')
+                            ->nullable(),
+                    ])
+                    ->fillForm(fn (DeliveryOrder $record) => [
+                        'expedition_id'    => $record->expedition_id,
+                        'container_number' => $record->container_number,
+                        'transportir_name' => $record->transportir_name,
+                    ])
+                    ->action(fn (DeliveryOrder $record, array $data) => $record->update($data))
+                    ->modalHeading('Update Expedition Details')
+                    ->modalDescription('Reported by the transportir after the loading has been arranged.')
+                    ->successNotificationTitle('Expedition details updated'),
 
                 Tables\Actions\EditAction::make()
                     ->visible(fn(DeliveryOrder $record) => $record->status === 'draft'),

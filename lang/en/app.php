@@ -8,6 +8,7 @@ return [
     'today_sales_id'     => 'Penjualan Hari Ini',
     'pending_do'         => 'Pending DO',
     'pending_do_id'      => 'DO Menunggu',
+    'pending_po'         => 'Pending PO',
     'low_stock_branches' => 'Low Stock Branches',
     'low_stock_id'       => 'Cabang Stok Menipis',
 

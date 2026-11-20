@@ -24,8 +24,11 @@ class DashboardController extends Controller
         $todayRevenue = DailySale::whereDate('sale_date', today())->sum('total_revenue');
         $monthRevenue = DailySale::whereYear('sale_date', now()->year)
             ->whereMonth('sale_date', now()->month)->sum('total_revenue');
-        $pendingDOs   = DeliveryOrder::where('status', 'pending_approval')->count();
-        $activeDOs    = DeliveryOrder::whereIn('status', ['approved', 'in_transit'])->count();
+        // DO flow retired (N-GEN-7): pending/active shipment counters read PO + LO.
+        // Response keys are kept for mobilex compatibility.
+        $pendingDOs   = DeliveryOrder::purchaseOrders()->where('status', 'pending_approval')->count();
+        $activeDOs    = DeliveryOrder::whereIn('document_type', ['po', 'lo'])
+            ->whereIn('status', ['approved', 'in_transit'])->count();
 
         // Low stock alerts
         $lowStock = StockItem::where('qty_full', '<', 20)
@@ -104,7 +107,8 @@ class DashboardController extends Controller
                 'alert_level'   => $s->qty_full < 20 ? 'danger' : ($s->qty_full < 50 ? 'warning' : 'ok'),
             ]);
 
-        $incomingDOs = DeliveryOrder::where('destination_branch_id', $branchId)
+        $incomingDOs = DeliveryOrder::purchaseOrders()
+            ->where('destination_branch_id', $branchId)
             ->whereIn('status', ['approved', 'in_transit'])
             ->with('expedition')
             ->orderBy('eta')

@@ -50,7 +50,10 @@ class ShipmentTracking extends Page
     {
         $user = auth()->user();
 
+        // Shipments are PO (HQ → branch) and LO (transportir/expedition legs).
+        // document_type 'do' is legacy history only and must stay out of live tracking (N-GEN-7).
         $query = DeliveryOrder::with(['originBranch', 'destinationBranch', 'expedition'])
+            ->whereIn('document_type', ['po', 'lo'])
             ->orderByRaw('(eta IS NULL) ASC, eta ASC');
 
         if ($this->status_filter === 'active') {
