@@ -302,6 +302,44 @@ class PurchaseOrderController extends Controller
         return $this->noContent();
     }
 
+    /**
+     * D10 (2026-11-20): upload the proof of delivery on the PO. The DO receipt route
+     * was retired with N-GEN-7; the guard stays the same — approvers OR the receiving
+     * (destination) branch, because proof-of-delivery is a receiving-side artifact.
+     */
+    public function uploadReceipt(DeliveryOrder $deliveryOrder, Request $request): JsonResponse
+    {
+        $user = $request->user();
+
+        $isReceiver = $deliveryOrder->destination_branch_id !== null
+            && (int) $deliveryOrder->destination_branch_id === (int) $user->branch_id;
+
+        if (! $user->canApproveOrders() && ! $isReceiver) {
+            return $this->forbidden('Only HQ or the destination branch can upload this receipt.');
+        }
+
+        if ($deliveryOrder->document_type !== 'po') {
+            return $this->error('Not a Purchase Order.', 422);
+        }
+
+        if (! in_array($deliveryOrder->status, ['in_transit', 'delivered'], true)) {
+            return $this->error('A receipt can only be uploaded for an in-transit or delivered Purchase Order.', 422);
+        }
+
+        $request->validate([
+            'receipt' => ['required', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:2048'],
+        ]);
+
+        $path = $request->file('receipt')->store('po-receipts', 'public');
+
+        $deliveryOrder->update(['receipt_path' => $path]);
+
+        return $this->success(
+            new DeliveryOrderResource($deliveryOrder->fresh()),
+            'Receipt uploaded.'
+        );
+    }
+
     private function canManage($user, DeliveryOrder $po): bool
     {
         return $user->isOwnerPusat() ||

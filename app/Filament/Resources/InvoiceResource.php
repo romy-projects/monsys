@@ -3,6 +3,7 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\InvoiceResource\Pages;
+use App\Filament\Support\OutstandingReconciliationSection;
 use App\Models\Branch;
 use App\Models\Customer;
 use App\Models\Invoice;
@@ -190,6 +191,9 @@ class InvoiceResource extends Resource
                         ->default(0)
                         ->columnSpan(1),
                 ])->columns(2),
+
+            // D7: open reconciliation credits/claims of the invoiced branch (display only).
+            OutstandingReconciliationSection::make('branch_id'),
 
             Forms\Components\Section::make('Notes')
                 ->schema([

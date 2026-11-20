@@ -381,29 +381,8 @@ class DeliveryOrderResource extends Resource
                     ->modalHeading('Mark as On Transportir?')
                     ->modalDescription('Confirm the shipment is now with the transportir/expedition.'),
 
-                // Upload Receipt (HQ - after on_transportir)
-                Tables\Actions\Action::make('upload_receipt')
-                    ->label('Upload Receipt')
-                    ->icon('heroicon-o-document-arrow-up')
-                    ->color('success')
-                    ->visible(
-                        fn(DeliveryOrder $record) =>
-                        in_array($record->status, ['on_transportir', 'delivered']) &&
-                            auth()->user()?->canApproveOrders()
-                    )
-                    ->form([
-                        Forms\Components\FileUpload::make('receipt_path')
-                            ->label('Receipt / Proof of Delivery')
-                            ->directory('do-receipts')
-                            ->acceptedFileTypes(['image/*', 'application/pdf'])
-                            ->maxSize(2048)
-                            ->required(),
-                    ])
-                    ->action(
-                        fn(DeliveryOrder $record, array $data) =>
-                        $record->update(['receipt_path' => $data['receipt_path']])
-                    )
-                    ->modalHeading('Upload DO Receipt'),
+                // Upload Receipt — D10 (2026-11-20): proof of delivery now lives on the PO
+                // (PurchaseOrderResource → "Upload Bukti Terima"); the DO flow is retired.
 
                 // Delivered (Branch - marks arrival)
                 Tables\Actions\Action::make('mark_delivered')
@@ -479,10 +458,10 @@ class DeliveryOrderResource extends Resource
 
     public static function getPages(): array
     {
+        // T15-02: read-only by policy — the create/edit pages are gone (canCreate/
+        // canEdit/canDelete all return false), only the legacy list remains.
         return [
-            'index'  => Pages\ListDeliveryOrders::route('/'),
-            'create' => Pages\CreateDeliveryOrder::route('/create'),
-            'edit'   => Pages\EditDeliveryOrder::route('/{record}/edit'),
+            'index' => Pages\ListDeliveryOrders::route('/'),
         ];
     }
 

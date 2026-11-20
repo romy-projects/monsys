@@ -3,6 +3,7 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\ReconciliationResource\Pages;
+use App\Filament\Resources\ReconciliationResource\RelationManagers\ReconciliationSettlementsRelationManager;
 use App\Models\Branch;
 use App\Models\CylinderReconciliation;
 use App\Models\DeliveryOrder;
@@ -75,36 +76,13 @@ class ReconciliationResource extends Resource
                     Infolists\Components\TextEntry::make('created_at')->label('Created')->dateTime('d M Y H:i'),
                 ])
                 ->columns(4),
-
-            Infolists\Components\Section::make('Settlements')
-                ->schema([
-                    Infolists\Components\RepeatableEntry::make('settlements')
-                        ->label('')
-                        ->placeholder('Tidak ada selisih — rantai PO/SO/LO seimbang.')
-                        ->schema([
-                            Infolists\Components\TextEntry::make('party')->badge(),
-                            Infolists\Components\TextEntry::make('type_label')->label('Obligation'),
-                            Infolists\Components\TextEntry::make('quantity'),
-                            Infolists\Components\TextEntry::make('amount')->money('IDR'),
-                            Infolists\Components\TextEntry::make('status')->badge(),
-                        ])
-                        ->columns(5),
-                ]),
         ]);
     }
 
     public static function table(Table $table): Table
     {
-        $user = auth()->user();
-
         return $table
-            ->modifyQueryUsing(function (Builder $query) use ($user) {
-                $query->with(['purchaseOrder', 'loadingOrder', 'salesOrder', 'branch']);
-
-                if (! $user?->isOwnerPusat() && ! $user?->isRegionalLeader()) {
-                    $query->where('branch_id', $user?->branch_id);
-                }
-            })
+            ->modifyQueryUsing(fn (Builder $query) => $query->with(['purchaseOrder', 'loadingOrder', 'salesOrder', 'branch']))
             ->columns([
                 Tables\Columns\TextColumn::make('purchaseOrder.do_number')
                     ->label('PO')
@@ -117,6 +95,14 @@ class ReconciliationResource extends Resource
                     ->label('LO')
                     ->badge()
                     ->color('info')
+                    ->searchable()
+                    ->toggleable(),
+
+                Tables\Columns\TextColumn::make('salesOrder.do_number')
+                    ->label('SO')
+                    ->badge()
+                    ->color('success')
+                    ->placeholder('—')
                     ->searchable()
                     ->toggleable(),
 
@@ -187,7 +173,32 @@ class ReconciliationResource extends Resource
                 Tables\Filters\SelectFilter::make('branch_id')
                     ->label('Branch')
                     ->options(fn () => Branch::orderBy('name')->pluck('name', 'id'))
-                    ->visible(fn () => auth()->user()?->isOwnerPusat() || auth()->user()?->isRegionalLeader()),
+                    ->visible(fn () => auth()->user()?->isOwnerPusat()),
+
+                // T13-05: explicit lookup by any document number of the PO→SO→LO chain.
+                Tables\Filters\Filter::make('document_number')
+                    ->label('Cari nomor dokumen')
+                    ->form([
+                        Forms\Components\TextInput::make('number')
+                            ->label('PO / SO / LO number')
+                            ->placeholder('PO2026-0001')
+                            ->helperText('Partial match across the whole chain.'),
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        $number = trim((string) ($data['number'] ?? ''));
+
+                        if ($number === '') {
+                            return $query;
+                        }
+
+                        return $query->where(fn (Builder $documents) => $documents
+                            ->whereHas('purchaseOrder', fn (Builder $document) => $document->where('do_number', 'like', "%{$number}%"))
+                            ->orWhereHas('salesOrder', fn (Builder $document) => $document->where('do_number', 'like', "%{$number}%"))
+                            ->orWhereHas('loadingOrder', fn (Builder $document) => $document->where('do_number', 'like', "%{$number}%")));
+                    })
+                    ->indicateUsing(fn (array $data): ?string => filled($data['number'] ?? null)
+                        ? 'Nomor: ' . $data['number']
+                        : null),
             ])
             ->actions([
                 Tables\Actions\ViewAction::make(),
@@ -197,7 +208,7 @@ class ReconciliationResource extends Resource
                     ->label('Rekonsiliasi LO')
                     ->icon('heroicon-o-arrow-path')
                     ->color('warning')
-                    ->visible(fn () => auth()->user()?->isOwnerPusat() || auth()->user()?->isRegionalLeader())
+                    ->visible(fn () => auth()->user()?->isOwnerPusat())
                     ->form([
                         Forms\Components\Select::make('loading_order_id')
                             ->label('Delivered Loading Order')
@@ -246,12 +257,24 @@ class ReconciliationResource extends Resource
         ];
     }
 
+    /** D6: Settle / Void the obligations of one reconciliation (view page). */
+    public static function getRelations(): array
+    {
+        return [
+            ReconciliationSettlementsRelationManager::class,
+        ];
+    }
+
+    /**
+     * D8 (2026-11-20): Rekonsiliasi Tabung follows the Tabung Sirkulasi access rule —
+     * owner_pusat only. Branches and regional leaders no longer see this resource.
+     */
     public static function canAccess(): bool
     {
         $user = auth()->user();
 
         return $user !== null
             && $user->canAccessPanel(app(\Filament\Panel::class))
-            && ($user->canViewFinance() || $user->isOwnerCabang() || $user->isStaffGudang());
+            && $user->isOwnerPusat();
     }
 }

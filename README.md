@@ -15,14 +15,20 @@ LPG distribution management system for multi-branch operations. Built with Larav
 
 - **Branch Management** — multi-branch hierarchy with role-based access
 - **Stock Management** — real-time stock tracking, mutations, daily close
-- **Delivery Orders** — full workflow: draft → approval → in-transit → received
+- **Purchase Orders** — branch → HQ ordering: draft → approval → in-transit → received, with server-side number allocation
+- **Loading Orders** — HQ → transportir / expedition haulage, with separate `LOT` / `LOE` number series
+- **Cylinder Reconciliation** — PO / SO / LO quantity discrepancies → HQ credit, transportir claim, carry-forward
 - **Sales** — daily sales entry with revenue tracking
 - **Finance** — operational costs, P&L reports, receivables aging
 - **Master Data** — branches, users, customers, vehicles, expeditions, LPG prices
 - **Reports** — stock summary, shipment tracking, sales period, branch ranking, HPP
 - **Excel Import** — bulk data seeding via downloadable templates
 - **Document Scanner** — OCR via Claude Vision API (backend ready)
-- **Push Notifications** — FCM integration for DO approvals and stock alerts
+- **Push Notifications** — device-token registration for the mobile app (`/api/v1/device/token`); backend sending is not implemented yet
+
+> **Note:** the DO workflow is retired — procurement runs through PO (branch → HQ) and LO (HQ → transportir),
+> and the "DO & Delivery" group now centres on PO / SO / LO / Rekonsiliasi Tabung. Existing delivery orders stay
+> readable for history (hidden from navigation, reachable by direct URL, plus `GET /api/v1/delivery-orders`); their write routes are gone.
 
 ## Role Hierarchy
 
@@ -109,9 +115,10 @@ app/
 │   ├── Resources/      # API JSON transformers
 │   └── Traits/         # ApiResponse trait
 ├── Models/             # Eloquent models
-├── Observers/          # Model observers (DO, StockItem)
+├── Observers/          # Model observers (DeliveryOrder, StockItem, LpgPrice)
 ├── Providers/          # Service providers
 │   └── Filament/       # Admin panel provider
+├── Services/           # DocumentNumberService, CylinderReconciliationService
 └── Support/            # XlsxReader, XlsxWriter
 ```
 

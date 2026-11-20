@@ -62,6 +62,12 @@ Route::group([], function () {
         // BALI-18…22 — cylinder reconciliation (PO vs SO vs delivered LO)
         Route::get('reconciliations', [ReconciliationController::class, 'index']);
         Route::post('reconciliations', [ReconciliationController::class, 'store']);
+        // D6/D7 — outstanding credits/claims of a branch + Settle / Void (Pusat only).
+        // NOTE: 'outstanding' must stay registered BEFORE {reconciliation}, otherwise
+        // show() swallows the literal path.
+        Route::get('reconciliations/outstanding', [ReconciliationController::class, 'outstanding']);
+        Route::post('reconciliations/settlements/{settlement}/settle', [ReconciliationController::class, 'settle']);
+        Route::post('reconciliations/settlements/{settlement}/void', [ReconciliationController::class, 'void']);
         Route::get('reconciliations/{reconciliation}', [ReconciliationController::class, 'show']);
 
         // Sales Orders (SO) — Main Branch to Pertamina
@@ -84,6 +90,8 @@ Route::group([], function () {
         Route::post('purchase-orders/{deliveryOrder}/mark-in-transit', [PurchaseOrderController::class, 'markInTransit']);
         Route::post('purchase-orders/{deliveryOrder}/receive', [PurchaseOrderController::class, 'receive']);
         Route::post('purchase-orders/{deliveryOrder}/cancel', [PurchaseOrderController::class, 'cancel']);
+        // D10 (2026-11-20): proof-of-delivery now belongs to the PO (the DO route is gone).
+        Route::post('purchase-orders/{deliveryOrder}/receipt', [PurchaseOrderController::class, 'uploadReceipt']);
 
         // Sales
         Route::apiResource('sales', SalesController::class);

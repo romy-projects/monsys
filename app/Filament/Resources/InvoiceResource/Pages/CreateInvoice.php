@@ -6,6 +6,7 @@ use App\Filament\Resources\InvoiceResource;
 use App\Models\Invoice;
 use App\Services\DocumentNumberService;
 use App\Support\InvoicePricing;
+use App\Support\OutstandingReconciliations;
 use Filament\Resources\Pages\CreateRecord;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
@@ -34,6 +35,13 @@ class CreateInvoice extends CreateRecord
         } else {
             $data['customer_id'] = null;
         }
+
+        // D6: only a branch invoice settles a reconciliation credit/claim.
+        $data['notes'] = OutstandingReconciliations::appendReference(
+            $data['notes'] ?? null,
+            $type === 'branch' ? (int) $data['reference_id'] : null,
+            $data['cylinder_type'] ?? null,
+        );
 
         return $data;
     }

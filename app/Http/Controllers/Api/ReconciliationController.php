@@ -4,10 +4,14 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Http\Resources\CylinderReconciliationResource;
+use App\Http\Resources\ReconciliationSettlementResource;
 use App\Http\Traits\ApiResponse;
 use App\Models\CylinderReconciliation;
 use App\Models\DeliveryOrder;
+use App\Models\Invoice;
+use App\Models\ReconciliationSettlement;
 use App\Services\CylinderReconciliationService;
+use App\Support\OutstandingReconciliations;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -16,8 +20,9 @@ use Illuminate\Validation\Rule;
  * BALI-18…22: read the reconciliations produced when an LO is delivered, and
  * trigger one manually ("Rekonsiliasi" action) without waiting for the observer.
  *
- * RBAC follows the finance endpoints: pusat/regional see everything, branch users
- * see only their own branch; only pusat/regional may force a reprocess.
+ * RBAC (D8, 2026-11-20): owner_pusat only — the same rule as Tabung Sirkulasi.
+ * The list is therefore not branch-scoped (only HQ can read it), and only Pusat
+ * may force a reprocess or settle a claim.
  */
 class ReconciliationController extends Controller
 {
@@ -42,9 +47,7 @@ class ReconciliationController extends Controller
 
         $query = CylinderReconciliation::query()->with(self::RELATIONS);
 
-        if (! $user->isOwnerPusat() && ! $user->isRegionalLeader()) {
-            $query->where('branch_id', $user->branch_id);
-        } elseif ($request->filled('branch_id')) {
+        if ($request->filled('branch_id')) {
             $query->where('branch_id', $request->branch_id);
         }
 
@@ -53,6 +56,23 @@ class ReconciliationController extends Controller
         }
         if ($request->filled('status')) {
             $query->where('status', $request->status);
+        }
+        // D6: reconciliations that still have (or already had) an obligation in this state.
+        if ($request->filled('settlement_status')) {
+            $query->whereHas('settlements', fn ($settlements) => $settlements->where('status', $request->settlement_status));
+        }
+        // T13-05: look a reconciliation up by any number of its chain (partial match).
+        foreach (['po_number' => 'purchaseOrder', 'so_number' => 'salesOrder', 'lo_number' => 'loadingOrder'] as $parameter => $relation) {
+            if (! $request->filled($parameter)) {
+                continue;
+            }
+
+            $number = trim((string) $request->input($parameter));
+
+            $query->whereHas(
+                $relation,
+                fn ($document) => $document->where('do_number', 'like', "%{$number}%")
+            );
         }
         if ($request->filled('from')) {
             $query->whereDate('created_at', '>=', $request->from);
@@ -77,11 +97,6 @@ class ReconciliationController extends Controller
             return $this->forbidden();
         }
 
-        if (! $user->isOwnerPusat() && ! $user->isRegionalLeader()
-            && (int) $reconciliation->branch_id !== (int) $user->branch_id) {
-            return $this->forbidden();
-        }
-
         return $this->success(
             new CylinderReconciliationResource($reconciliation->load(self::RELATIONS))
         );
@@ -95,8 +110,8 @@ class ReconciliationController extends Controller
     {
         $user = $request->user();
 
-        if (! $user->isOwnerPusat() && ! $user->isRegionalLeader()) {
-            return $this->forbidden('Only Pusat/Regional can reconcile a Loading Order.');
+        if (! $user->isOwnerPusat()) {
+            return $this->forbidden('Only Pusat can reconcile a Loading Order.');
         }
 
         $data = $request->validate([
@@ -126,9 +141,126 @@ class ReconciliationController extends Controller
         );
     }
 
+    /**
+     * D6/D7: the open credits/claims of a branch, for the data-entry warning and the
+     * `notes` reference of the next Invoice / SO / LOT / LOE. Display only — nothing
+     * is deducted automatically.
+     */
+    public function outstanding(Request $request): JsonResponse
+    {
+        if (! $this->canView($request->user())) {
+            return $this->forbidden();
+        }
+
+        $data = $request->validate([
+            'branch_id'     => ['required', 'integer', Rule::exists('branches', 'id')],
+            'cylinder_type' => ['nullable', Rule::in(['3kg', '5.5kg', '12kg', '50kg'])],
+        ]);
+
+        $branchId = (int) $data['branch_id'];
+        $cylinderType = $data['cylinder_type'] ?? null;
+
+        $rows = OutstandingReconciliations::forBranch($branchId, $cylinderType);
+
+        return $this->success([
+            'branch_id'      => $branchId,
+            'cylinder_type'  => $cylinderType,
+            'note_reference' => OutstandingReconciliations::noteReference($branchId, $cylinderType),
+            'total_amount'   => (float) $rows->sum(fn (ReconciliationSettlement $row) => (float) $row->amount),
+            'rows'           => $rows->map(fn (ReconciliationSettlement $row) => [
+                'id'                       => $row->id,
+                'reconciliation_id'        => $row->reconciliation_id,
+                'party'                    => $row->party,
+                'settlement_type'          => $row->settlement_type,
+                'type_label'               => $row->type_label,
+                'quantity'                 => (int) $row->quantity,
+                'unit_price'               => (float) $row->unit_price,
+                'amount'                   => (float) $row->amount,
+                'status'                   => $row->status,
+                'applies_to_next_delivery' => (bool) $row->applies_to_next_delivery,
+                'source_purchase_order_id' => $row->source_purchase_order_id,
+                'purchase_order_number'    => $row->reconciliation?->purchaseOrder?->do_number,
+                'loading_order_number'     => $row->reconciliation?->loadingOrder?->do_number,
+                'cylinder_type'            => $row->reconciliation?->cylinder_type,
+                'line'                     => OutstandingReconciliations::line($row),
+            ])->values()->all(),
+        ], 'Outstanding reconciliation obligations.');
+    }
+
+    /**
+     * D6: settle one obligation with the document that carried it (Invoice / SO /
+     * LOT / LOE). Receivables and payables are never touched from here.
+     */
+    public function settle(ReconciliationSettlement $settlement, Request $request): JsonResponse
+    {
+        $user = $request->user();
+
+        if (! $user->isOwnerPusat()) {
+            return $this->forbidden('Only Pusat can settle a reconciliation claim.');
+        }
+
+        $data = $request->validate([
+            'settled_by_type' => ['required', Rule::in(array_keys(ReconciliationSettlement::documents()))],
+            'document_id'     => ['required', 'integer'],
+            'notes'           => ['nullable', 'string', 'max:1000'],
+        ]);
+
+        if (! $this->settlementDocumentExists($data['settled_by_type'], (int) $data['document_id'])) {
+            return $this->error('The settlement document does not exist.', 422);
+        }
+
+        if (! $settlement->markSettled($data['settled_by_type'], (int) $data['document_id'], $user->id)) {
+            return $this->error('This settlement is not open anymore.', 422);
+        }
+
+        if (filled($data['notes'] ?? null)) {
+            $settlement->forceFill([
+                'notes' => trim(((string) $settlement->notes)."\n".trim($data['notes'])),
+            ])->save();
+        }
+
+        return $this->success(
+            new ReconciliationSettlementResource($settlement->fresh()),
+            'Settlement marked as settled.'
+        );
+    }
+
+    /** Void an obligation the admin decided not to charge (history is kept). */
+    public function void(ReconciliationSettlement $settlement, Request $request): JsonResponse
+    {
+        $user = $request->user();
+
+        if (! $user->isOwnerPusat()) {
+            return $this->forbidden('Only Pusat can void a reconciliation claim.');
+        }
+
+        $data = $request->validate([
+            'reason' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        if (! $settlement->markVoid($user->id, $data['reason'] ?? null)) {
+            return $this->error('This settlement is already void.', 422);
+        }
+
+        return $this->success(
+            new ReconciliationSettlementResource($settlement->fresh()),
+            'Settlement voided.'
+        );
+    }
+
+    /** The next document that settles an obligation must exist and match its type. */
+    private function settlementDocumentExists(string $type, int $id): bool
+    {
+        return match ($type) {
+            ReconciliationSettlement::DOCUMENT_INVOICE       => Invoice::whereKey($id)->exists(),
+            ReconciliationSettlement::DOCUMENT_SALES_ORDER   => DeliveryOrder::salesOrders()->whereKey($id)->exists(),
+            ReconciliationSettlement::DOCUMENT_LOADING_ORDER => DeliveryOrder::loadingOrders()->whereKey($id)->exists(),
+            default                                          => false,
+        };
+    }
+
     private function canView($user): bool
     {
-        return $user !== null
-            && ($user->canViewFinance() || $user->isOwnerCabang() || $user->isStaffGudang());
+        return $user !== null && $user->isOwnerPusat();
     }
 }

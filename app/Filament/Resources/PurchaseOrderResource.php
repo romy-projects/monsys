@@ -309,6 +309,16 @@ class PurchaseOrderResource extends Resource
                     ->label('Notes')
                     ->limit(40)
                     ->toggleable(isToggledHiddenByDefault: true),
+
+                // D10: proof of delivery travels with the PO now that DO is retired.
+                Tables\Columns\TextColumn::make('receipt_path')
+                    ->label('Bukti Terima')
+                    ->formatStateUsing(fn ($state): string => filled($state) ? 'Lihat' : '—')
+                    ->url(fn (DeliveryOrder $record): ?string => filled($record->receipt_path)
+                        ? asset('storage/'.$record->receipt_path)
+                        : null)
+                    ->openUrlInNewTab()
+                    ->toggleable(),
             ])
             ->filters([
                 Tables\Filters\SelectFilter::make('status')
@@ -404,6 +414,29 @@ class PurchaseOrderResource extends Resource
                     ]))
                     ->modalHeading('Confirm Delivery')
                     ->modalDescription('Mark this PO as arrived at the destination branch.'),
+
+                // Bukti terima / proof of delivery (D10) — HQ approvers or the receiving branch.
+                Tables\Actions\Action::make('upload_receipt')
+                    ->label('Upload Bukti Terima')
+                    ->icon('heroicon-o-document-arrow-up')
+                    ->color('success')
+                    ->visible(
+                        fn(DeliveryOrder $record) =>
+                        in_array($record->status, ['in_transit', 'delivered'], true) &&
+                            (auth()->user()?->canApproveOrders() ||
+                                ((int) auth()->user()?->branch_id === (int) $record->destination_branch_id))
+                    )
+                    ->form([
+                        Forms\Components\FileUpload::make('receipt_path')
+                            ->label('Receipt / Proof of Delivery')
+                            ->directory('po-receipts')
+                            ->acceptedFileTypes(['image/*', 'application/pdf'])
+                            ->maxSize(2048)
+                            ->required(),
+                    ])
+                    ->action(fn(DeliveryOrder $record, array $data) => $record->update(['receipt_path' => $data['receipt_path']]))
+                    ->modalHeading('Upload Bukti Terima (PO)')
+                    ->modalDescription('JPG / PNG / PDF, maksimal 2 MB.'),
 
                 // Cancel (HQ only)
                 Tables\Actions\Action::make('cancel')

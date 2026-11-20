@@ -9,6 +9,7 @@ use App\Models\LpgPrice;
 use App\Models\ReconciliationSettlement;
 use App\Models\User;
 use App\Services\CylinderReconciliationService;
+use App\Filament\Resources\ReconciliationResource;
 use App\Filament\Resources\ReconciliationResource\Pages\ListReconciliations;
 use App\Filament\Resources\ReconciliationResource\Pages\ViewReconciliation;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -29,6 +30,7 @@ class CylinderReconciliationTest extends TestCase
     private User $pusat;
     private User $branchOwner;
     private User $otherOwner;
+    private User $regional;
     private Branch $mainBranch;
     private Branch $branch;
     private Branch $otherBranch;
@@ -58,6 +60,10 @@ class CylinderReconciliationTest extends TestCase
         $this->otherOwner = User::create([
             'name' => 'Surabaya Owner', 'email' => 'surabaya@recon.test', 'password' => bcrypt('password'),
             'role' => 'owner_cabang', 'branch_id' => $this->otherBranch->id, 'status' => 'active',
+        ]);
+        $this->regional = User::create([
+            'name' => 'Regional Leader', 'email' => 'regional@recon.test', 'password' => bcrypt('password'),
+            'role' => 'regional_leader', 'branch_id' => $this->mainBranch->id, 'status' => 'active',
         ]);
     }
 
@@ -266,7 +272,7 @@ class CylinderReconciliationTest extends TestCase
     }
 
     #[Test]
-    public function reconciliation_index_is_branch_scoped_while_pusat_sees_everything(): void
+    public function reconciliation_api_is_pusat_only(): void
     {
         $this->deliverChain(100, 90, 90, '010');
 
@@ -277,15 +283,28 @@ class CylinderReconciliationTest extends TestCase
             ->assertJsonPath('data.0.case_type', 'case_1')
             ->assertJsonPath('data.0.branch.id', $this->branch->id);
 
+        // D8 (2026-11-20): the reconciliation API follows Tabung Sirkulasi — pusat only.
+        $this->actingAs($this->regional, 'sanctum');
+        $this->getJson('/api/v1/reconciliations')->assertStatus(403);
+
         $this->actingAs($this->branchOwner, 'sanctum');
-        $this->getJson('/api/v1/reconciliations')
-            ->assertStatus(200)
-            ->assertJsonPath('meta.total', 1);
+        $this->getJson('/api/v1/reconciliations')->assertStatus(403);
 
         $this->actingAs($this->otherOwner, 'sanctum');
-        $this->getJson('/api/v1/reconciliations')
-            ->assertStatus(200)
-            ->assertJsonPath('meta.total', 0);
+        $this->getJson('/api/v1/reconciliations')->assertStatus(403);
+    }
+
+    #[Test]
+    public function reconciliation_resource_is_pusat_only(): void
+    {
+        $this->actingAs($this->pusat);
+        $this->assertTrue(ReconciliationResource::canAccess());
+
+        $this->actingAs($this->regional);
+        $this->assertFalse(ReconciliationResource::canAccess());
+
+        $this->actingAs($this->branchOwner);
+        $this->assertFalse(ReconciliationResource::canAccess());
     }
 
     #[Test]

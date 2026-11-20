@@ -3,6 +3,7 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\ExpeditionLoadingOrderResource\Pages;
+use App\Filament\Support\OutstandingReconciliationSection;
 use App\Models\Branch;
 use App\Models\DeliveryOrder;
 use App\Models\Expedition;
@@ -180,6 +181,9 @@ class ExpeditionLoadingOrderResource extends Resource
                         ->nullable()
                         ->columnSpanFull(),
                 ])->columns(2),
+
+            // D7: open reconciliation credits/claims of the destination branch (display only).
+            OutstandingReconciliationSection::make(),
 
             Forms\Components\Section::make('Notes')
                 ->schema([

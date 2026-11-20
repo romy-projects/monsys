@@ -117,16 +117,6 @@ class DeliveryOrder extends Model
         return $this->belongsTo(Branch::class, 'destination_branch_id');
     }
 
-    /**
-     * The DO auto-created from this PO (linked via po_number = this do_number).
-     * Used to show shipment status inside the PO screen.
-     */
-    public function linkedDo(): HasOne
-    {
-        return $this->hasOne(DeliveryOrder::class, 'po_number', 'do_number')
-            ->where('document_type', 'do');
-    }
-
     public function lpgPrices(): HasMany
     {
         return $this->hasMany(LpgPrice::class, 'purchase_order_id');

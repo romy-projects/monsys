@@ -74,10 +74,15 @@ class CylinderReconciliationService
             default             => 'balanced',
         };
 
-        return DB::transaction(function () use (
+        [$reconciliation, $notify] = DB::transaction(function () use (
             $lo, $po, $so, $branchId, $paid, $redeemed, $delivered,
             $unredeemed, $shortDelivered, $overDelivered, $unitPrice, $caseType, $createdBy
-        ): CylinderReconciliation {
+        ): array {
+            $previous = CylinderReconciliation::query()
+                ->where('purchase_order_id', $po->id)
+                ->where('loading_order_id', $lo->id)
+                ->first();
+
             $reconciliation = CylinderReconciliation::updateOrCreate(
                 [
                     'purchase_order_id' => $po->id,
@@ -111,8 +116,42 @@ class CylinderReconciliationService
                 $overDelivered
             );
 
-            return $reconciliation->fresh('settlements');
+            return [
+                $reconciliation->fresh(['settlements', 'branch', 'purchaseOrder', 'salesOrder', 'loadingOrder']),
+                $this->isMaterialChange($previous, $paid, $redeemed, $delivered, $caseType, $unitPrice),
+            ];
         });
+
+        // T12-08b: HQ and the owning branch hear about a new discrepancy exactly
+        // once — a reprocess that changes nothing stays silent (BALI-22).
+        if ($notify) {
+            app(ReconciliationNotifier::class)->notifyDiscrepancy($reconciliation);
+        }
+
+        return $reconciliation;
+    }
+
+    /**
+     * T12-08b: only a new or numerically changed reconciliation is worth a
+     * notification; re-running the trigger on unchanged data must not re-notify.
+     */
+    private function isMaterialChange(
+        ?CylinderReconciliation $previous,
+        int $paid,
+        int $redeemed,
+        int $delivered,
+        string $caseType,
+        float $unitPrice
+    ): bool {
+        if ($previous === null) {
+            return true;
+        }
+
+        return (int) $previous->quantity_paid !== $paid
+            || (int) $previous->quantity_redeemed !== $redeemed
+            || (int) $previous->quantity_delivered !== $delivered
+            || $previous->case_type !== $caseType
+            || (float) $previous->unit_price !== $unitPrice;
     }
 
 

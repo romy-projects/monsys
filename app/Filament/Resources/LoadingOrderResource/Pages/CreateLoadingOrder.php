@@ -4,6 +4,7 @@ namespace App\Filament\Resources\LoadingOrderResource\Pages;
 
 use App\Filament\Resources\LoadingOrderResource;
 use App\Services\DocumentNumberService;
+use App\Support\OutstandingReconciliations;
 use Filament\Resources\Pages\CreateRecord;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
@@ -23,6 +24,13 @@ class CreateLoadingOrder extends CreateRecord
         // arranges (and pays for) its own expedition (BALI-13).
         $data['cost_borne_by']   = 'transporter';
         $data['expedition_cost'] = null;
+
+        // D6: the credit this LO settles must be referenced in the notes.
+        $data['notes'] = OutstandingReconciliations::appendReference(
+            $data['notes'] ?? null,
+            $data['destination_branch_id'] ?? null,
+            $data['cylinder_type'] ?? null,
+        );
 
         return $data;
     }
