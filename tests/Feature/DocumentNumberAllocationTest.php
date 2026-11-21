@@ -8,6 +8,7 @@ use App\Models\LpgPrice;
 use App\Models\StockClose;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
@@ -16,9 +17,13 @@ class DocumentNumberAllocationTest extends TestCase
     use RefreshDatabase;
 
     private User $pusat;
+
     private User $branchOwner;
+
     private Branch $mainBranch;
+
     private Branch $otherBranch;
+
     private int $year;
 
     protected function setUp(): void
@@ -28,48 +33,48 @@ class DocumentNumberAllocationTest extends TestCase
         $this->year = (int) date('Y');
 
         $this->mainBranch = Branch::create([
-            'code'   => 'PST',
-            'name'   => 'SUM Pusat',
-            'city'   => 'Jakarta',
+            'code' => 'PST',
+            'name' => 'SUM Pusat',
+            'city' => 'Jakarta',
             'status' => 'active',
         ]);
 
         $this->otherBranch = Branch::create([
-            'code'   => 'BDG',
-            'name'   => 'SUM Bandung',
-            'city'   => 'Bandung',
+            'code' => 'BDG',
+            'name' => 'SUM Bandung',
+            'city' => 'Bandung',
             'status' => 'active',
         ]);
 
         $this->pusat = User::create([
-            'name'      => 'Pusat User',
-            'email'     => 'pusat@test.com',
-            'password'  => bcrypt('password'),
-            'role'      => 'owner_pusat',
+            'name' => 'Pusat User',
+            'email' => 'pusat@test.com',
+            'password' => bcrypt('password'),
+            'role' => 'owner_pusat',
             'branch_id' => $this->mainBranch->id,
-            'status'    => 'active',
+            'status' => 'active',
         ]);
 
         $this->branchOwner = User::create([
-            'name'      => 'Branch Owner',
-            'email'     => 'branch@test.com',
-            'password'  => bcrypt('password'),
-            'role'      => 'owner_cabang',
+            'name' => 'Branch Owner',
+            'email' => 'branch@test.com',
+            'password' => bcrypt('password'),
+            'role' => 'owner_cabang',
             'branch_id' => $this->otherBranch->id,
-            'status'    => 'active',
+            'status' => 'active',
         ]);
 
         // Golden Rule: a branch must submit today's stock close before creating a PO
         StockClose::create([
-            'branch_id'     => $this->otherBranch->id,
-            'close_date'    => today(),
+            'branch_id' => $this->otherBranch->id,
+            'close_date' => today(),
             'cylinder_type' => '3kg',
-            'qty_full'      => 100,
-            'qty_empty'     => 10,
-            'qty_damaged'   => 0,
-            'submitted_by'  => $this->branchOwner->id,
-            'submitted_at'  => now(),
-            'status'        => 'submitted',
+            'qty_full' => 100,
+            'qty_empty' => 10,
+            'qty_damaged' => 0,
+            'submitted_by' => $this->branchOwner->id,
+            'submitted_at' => now(),
+            'status' => 'submitted',
         ]);
     }
 
@@ -79,8 +84,8 @@ class DocumentNumberAllocationTest extends TestCase
         $this->actingAs($this->branchOwner, 'sanctum');
 
         $response = $this->postJson('/api/v1/purchase-orders', [
-            'order_date'       => '2026-08-10',
-            'cylinder_type'    => '3kg',
+            'order_date' => '2026-08-10',
+            'cylinder_type' => '3kg',
             'quantity_ordered' => 50,
         ]);
 
@@ -90,7 +95,7 @@ class DocumentNumberAllocationTest extends TestCase
             ->assertJsonPath('data.status', 'draft');
 
         $this->assertDatabaseHas('delivery_orders', [
-            'do_number'     => "PO{$this->year}-001",
+            'do_number' => "PO{$this->year}-001",
             'document_type' => 'po',
         ]);
     }
@@ -104,8 +109,8 @@ class DocumentNumberAllocationTest extends TestCase
 
         for ($i = 0; $i < 10; $i++) {
             $response = $this->postJson('/api/v1/purchase-orders', [
-                'order_date'       => '2026-08-10',
-                'cylinder_type'    => '3kg',
+                'order_date' => '2026-08-10',
+                'cylinder_type' => '3kg',
                 'quantity_ordered' => 10 + $i,
             ]);
 
@@ -126,9 +131,9 @@ class DocumentNumberAllocationTest extends TestCase
         $this->actingAs($this->branchOwner, 'sanctum');
 
         $response = $this->postJson('/api/v1/purchase-orders', [
-            'do_number'        => 'PO2026-777',
-            'order_date'       => '2026-08-10',
-            'cylinder_type'    => '3kg',
+            'do_number' => 'PO2026-777',
+            'order_date' => '2026-08-10',
+            'cylinder_type' => '3kg',
             'quantity_ordered' => 50,
         ]);
 
@@ -142,9 +147,9 @@ class DocumentNumberAllocationTest extends TestCase
         $this->actingAs($this->pusat, 'sanctum');
 
         $response = $this->postJson('/api/v1/sales-orders', [
-            'order_date'        => '2026-08-10',
-            'cylinder_type'     => '3kg',
-            'quantity_ordered'  => 100,
+            'order_date' => '2026-08-10',
+            'cylinder_type' => '3kg',
+            'quantity_ordered' => 100,
             'counterparty_name' => 'Pertamina Patra Niaga',
         ]);
 
@@ -168,12 +173,12 @@ class DocumentNumberAllocationTest extends TestCase
         ]);
 
         $response = $this->postJson('/api/v1/invoices', [
-            'branch_id'     => $this->mainBranch->id,
+            'branch_id' => $this->mainBranch->id,
             'cylinder_type' => '3kg',
-            'quantity'      => 10,
-            'unit_price'    => 20000,
-            'issue_date'    => '2026-08-10',
-            'due_date'      => '2026-08-20',
+            'quantity' => 10,
+            'unit_price' => 20000,
+            'issue_date' => '2026-08-10',
+            'due_date' => '2026-08-20',
         ]);
 
         $response->assertStatus(201);
@@ -186,27 +191,27 @@ class DocumentNumberAllocationTest extends TestCase
     public function approved_so_does_not_consume_a_do_number(): void
     {
         $so = DeliveryOrder::create([
-            'do_number'         => 'SO2026-900',
-            'document_type'     => 'so',
+            'do_number' => 'SO2026-900',
+            'document_type' => 'so',
             'counterparty_type' => 'pertamina',
             'counterparty_name' => 'Pertamina',
-            'origin_branch_id'  => $this->mainBranch->id,
-            'cylinder_type'     => '3kg',
-            'quantity_ordered'  => 100,
-            'order_date'        => '2026-08-10',
-            'requested_by'      => $this->pusat->id,
-            'status'            => 'pending_approval',
+            'origin_branch_id' => $this->mainBranch->id,
+            'cylinder_type' => '3kg',
+            'quantity_ordered' => 100,
+            'order_date' => '2026-08-10',
+            'requested_by' => $this->pusat->id,
+            'status' => 'pending_approval',
         ]);
 
         $so->update([
-            'status'      => 'approved',
+            'status' => 'approved',
             'approved_by' => $this->pusat->id,
             'approved_at' => now(),
         ]);
 
         // N-GEN-7: no DO is created, so the 'do' series must not advance either.
         $this->assertSame(0, DeliveryOrder::deliveryOrders()->count());
-        $this->assertSame(0, (int) \Illuminate\Support\Facades\DB::table('document_sequences')
+        $this->assertSame(0, (int) DB::table('document_sequences')
             ->where('document_type', 'do')
             ->where('year', $this->year)
             ->value('last_number'));

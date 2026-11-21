@@ -30,7 +30,9 @@ class PaymentResourceSmokeTest extends TestCase
     use RefreshDatabase;
 
     private User $pusat;
+
     private Receivable $receivable;
+
     private Payable $payable;
 
     protected function setUp(): void
@@ -38,64 +40,64 @@ class PaymentResourceSmokeTest extends TestCase
         parent::setUp();
 
         $branch = Branch::create([
-            'code'   => 'PST',
-            'name'   => 'SUM Pusat',
-            'city'   => 'Jakarta',
+            'code' => 'PST',
+            'name' => 'SUM Pusat',
+            'city' => 'Jakarta',
             'status' => 'active',
         ]);
 
         $this->pusat = User::create([
-            'name'      => 'Pusat User',
-            'email'     => 'pusat@test.com',
-            'password'  => bcrypt('password'),
-            'role'      => 'owner_pusat',
+            'name' => 'Pusat User',
+            'email' => 'pusat@test.com',
+            'password' => bcrypt('password'),
+            'role' => 'owner_pusat',
             'branch_id' => $branch->id,
-            'status'    => 'active',
+            'status' => 'active',
         ]);
 
         $this->actingAs($this->pusat);
 
         $this->receivable = Receivable::create([
-            'branch_id'      => $branch->id,
-            'buyer_name'     => 'Toko Sinar Jaya',
-            'buyer_type'     => 'retail',
+            'branch_id' => $branch->id,
+            'buyer_name' => 'Toko Sinar Jaya',
+            'buyer_type' => 'retail',
             'invoice_number' => 'INV-SMOKE-1',
-            'invoice_date'   => today()->toDateString(),
-            'due_date'       => today()->addDays(30)->toDateString(),
-            'amount'         => 1000000,
-            'paid_amount'    => 0,
-            'status'         => 'outstanding',
-            'created_by'     => $this->pusat->id,
+            'invoice_date' => today()->toDateString(),
+            'due_date' => today()->addDays(30)->toDateString(),
+            'amount' => 1000000,
+            'paid_amount' => 0,
+            'status' => 'outstanding',
+            'created_by' => $this->pusat->id,
         ]);
 
         $transportir = Transportir::create([
-            'name'   => 'PT Raja Sumber Cahaya',
-            'code'   => 'TRP-01',
+            'name' => 'PT Raja Sumber Cahaya',
+            'code' => 'TRP-01',
             'status' => 'active',
         ]);
 
         $lot = DeliveryOrder::create([
-            'do_number'             => 'LOT2026-900',
-            'document_type'         => 'lo',
-            'lo_kind'               => 'transportir',
-            'origin_branch_id'      => $branch->id,
+            'do_number' => 'LOT2026-900',
+            'document_type' => 'lo',
+            'lo_kind' => 'transportir',
+            'origin_branch_id' => $branch->id,
             'destination_branch_id' => $branch->id,
-            'transportir_id'        => $transportir->id,
-            'cylinder_type'         => '12kg',
-            'quantity_ordered'      => 100,
-            'order_date'            => today()->toDateString(),
-            'requested_by'          => $this->pusat->id,
-            'status'                => 'draft',
+            'transportir_id' => $transportir->id,
+            'cylinder_type' => '12kg',
+            'quantity_ordered' => 100,
+            'order_date' => today()->toDateString(),
+            'requested_by' => $this->pusat->id,
+            'status' => 'draft',
         ]);
 
         $this->payable = Payable::create([
-            'transportir_id'    => $transportir->id,
+            'transportir_id' => $transportir->id,
             'delivery_order_id' => $lot->id,
-            'invoice_number'    => 'TRP-INV-SMOKE-1',
-            'description'       => 'Ongkos angkut 12kg',
-            'amount'            => 1000000,
-            'paid_amount'       => 0,
-            'status'            => 'pending',
+            'invoice_number' => 'TRP-INV-SMOKE-1',
+            'description' => 'Ongkos angkut 12kg',
+            'amount' => 1000000,
+            'paid_amount' => 0,
+            'status' => 'pending',
         ]);
     }
 
@@ -107,11 +109,11 @@ class PaymentResourceSmokeTest extends TestCase
             ->assertTableActionExists('record_payment')
             ->assertTableActionExists('payments')
             ->callTableAction('record_payment', $this->receivable, [
-                'paid_on'      => today()->toDateString(),
-                'amount'       => 250000,
-                'method'       => 'transfer',
+                'paid_on' => today()->toDateString(),
+                'amount' => 250000,
+                'method' => 'transfer',
                 'reference_no' => 'TRF-SMOKE-1',
-                'notes'        => 'Termin 1',
+                'notes' => 'Termin 1',
             ])
             ->assertHasNoTableActionErrors();
 
@@ -135,8 +137,8 @@ class PaymentResourceSmokeTest extends TestCase
             ->assertTableActionExists('mark_as_paid')
             ->callTableAction('record_payment', $this->payable, [
                 'paid_on' => today()->toDateString(),
-                'amount'  => 400000,
-                'method'  => 'cash',
+                'amount' => 400000,
+                'method' => 'cash',
             ])
             ->assertHasNoTableActionErrors();
 

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\ScopesToAccessibleBranches;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -14,6 +15,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  */
 class CylinderReconciliation extends Model
 {
+    use ScopesToAccessibleBranches;
+
     protected $fillable = [
         'purchase_order_id',
         'loading_order_id',
@@ -34,13 +37,13 @@ class CylinderReconciliation extends Model
     ];
 
     protected $casts = [
-        'quantity_paid'            => 'integer',
-        'quantity_redeemed'        => 'integer',
-        'quantity_delivered'       => 'integer',
-        'quantity_unredeemed'      => 'integer',
+        'quantity_paid' => 'integer',
+        'quantity_redeemed' => 'integer',
+        'quantity_delivered' => 'integer',
+        'quantity_unredeemed' => 'integer',
         'quantity_short_delivered' => 'integer',
-        'quantity_over_delivered'  => 'integer',
-        'unit_price'               => 'decimal:2',
+        'quantity_over_delivered' => 'integer',
+        'unit_price' => 'decimal:2',
     ];
 
     // =========================================================
@@ -88,7 +91,7 @@ class CylinderReconciliation extends Model
             'case_1' => 'Case 1 — Unredeemed PO',
             'case_2' => 'Case 2 — Short Delivery',
             'case_3' => 'Case 3 — Over Delivery',
-            default  => 'Balanced',
+            default => 'Balanced',
         };
     }
 

@@ -22,10 +22,15 @@ class LoadingOrderKindTest extends TestCase
     use RefreshDatabase;
 
     private Branch $mainBranch;
+
     private Branch $otherBranch;
+
     private User $pusat;
+
     private Transportir $transportir;
+
     private Expedition $expedition;
+
     private DeliveryOrder $po;
 
     protected function setUp(): void
@@ -33,97 +38,97 @@ class LoadingOrderKindTest extends TestCase
         parent::setUp();
 
         $this->mainBranch = Branch::create([
-            'code'   => 'PST',
-            'name'   => 'SUM Pusat',
-            'city'   => 'Jakarta',
+            'code' => 'PST',
+            'name' => 'SUM Pusat',
+            'city' => 'Jakarta',
             'status' => 'active',
         ]);
 
         $this->otherBranch = Branch::create([
-            'code'   => 'BDG',
-            'name'   => 'SUM Bandung',
-            'city'   => 'Bandung',
+            'code' => 'BDG',
+            'name' => 'SUM Bandung',
+            'city' => 'Bandung',
             'status' => 'active',
         ]);
 
         $this->pusat = User::create([
-            'name'      => 'Pusat User',
-            'email'     => 'pusat@test.com',
-            'password'  => bcrypt('password'),
-            'role'      => 'owner_pusat',
+            'name' => 'Pusat User',
+            'email' => 'pusat@test.com',
+            'password' => bcrypt('password'),
+            'role' => 'owner_pusat',
             'branch_id' => $this->mainBranch->id,
-            'status'    => 'active',
+            'status' => 'active',
         ]);
 
         $this->transportir = Transportir::create([
-            'name'   => 'PT Raja Sumber Cahaya',
-            'code'   => 'TRP-01',
+            'name' => 'PT Raja Sumber Cahaya',
+            'code' => 'TRP-01',
             'status' => 'active',
         ]);
 
         $this->expedition = Expedition::create([
-            'name'   => 'Ekspedisi Bali',
-            'code'   => 'EXP-01',
+            'name' => 'Ekspedisi Bali',
+            'code' => 'EXP-01',
             'status' => 'active',
         ]);
 
         $this->po = DeliveryOrder::create([
-            'do_number'             => 'PO2026-001',
-            'document_type'         => 'po',
-            'counterparty_type'     => 'branch',
-            'counterparty_name'     => 'SUM Bandung',
-            'origin_branch_id'      => $this->mainBranch->id,
+            'do_number' => 'PO2026-001',
+            'document_type' => 'po',
+            'counterparty_type' => 'branch',
+            'counterparty_name' => 'SUM Bandung',
+            'origin_branch_id' => $this->mainBranch->id,
             'destination_branch_id' => $this->otherBranch->id,
-            'cylinder_type'         => '12kg',
-            'quantity_ordered'      => 100,
-            'order_date'            => today()->toDateString(),
-            'requested_by'          => $this->pusat->id,
-            'status'                => 'approved',
+            'cylinder_type' => '12kg',
+            'quantity_ordered' => 100,
+            'order_date' => today()->toDateString(),
+            'requested_by' => $this->pusat->id,
+            'status' => 'approved',
         ]);
     }
 
     private function transportirPayload(array $overrides = []): array
     {
         return array_merge([
-            'order_date'            => today()->toDateString(),
-            'cylinder_type'         => '12kg',
-            'quantity_ordered'      => 100,
+            'order_date' => today()->toDateString(),
+            'cylinder_type' => '12kg',
+            'quantity_ordered' => 100,
             'destination_branch_id' => $this->otherBranch->id,
-            'po_number'             => $this->po->do_number,
-            'transportir_id'        => $this->transportir->id,
+            'po_number' => $this->po->do_number,
+            'transportir_id' => $this->transportir->id,
         ], $overrides);
     }
 
     private function expeditionPayload(?DeliveryOrder $parent, array $overrides = []): array
     {
         return array_merge([
-            'lo_kind'               => 'expedition',
-            'order_date'            => today()->toDateString(),
-            'cylinder_type'         => '12kg',
-            'quantity_ordered'      => 100,
+            'lo_kind' => 'expedition',
+            'order_date' => today()->toDateString(),
+            'cylinder_type' => '12kg',
+            'quantity_ordered' => 100,
             'destination_branch_id' => $this->otherBranch->id,
             'transportir_lo_number' => $parent?->do_number,
-            'expedition_id'         => $this->expedition->id,
-            'container_number'      => 'CONT-2026-001',
-            'expedition_cost'       => 15000,
+            'expedition_id' => $this->expedition->id,
+            'container_number' => 'CONT-2026-001',
+            'expedition_cost' => 15000,
         ], $overrides);
     }
 
     private function createTransportirLo(): DeliveryOrder
     {
         return DeliveryOrder::create([
-            'do_number'             => 'LOT2026-001',
-            'document_type'         => 'lo',
-            'lo_kind'               => 'transportir',
-            'origin_branch_id'      => $this->mainBranch->id,
+            'do_number' => 'LOT2026-001',
+            'document_type' => 'lo',
+            'lo_kind' => 'transportir',
+            'origin_branch_id' => $this->mainBranch->id,
             'destination_branch_id' => $this->otherBranch->id,
-            'po_number'             => $this->po->do_number,
-            'transportir_id'        => $this->transportir->id,
-            'cylinder_type'         => '12kg',
-            'quantity_ordered'      => 100,
-            'order_date'            => today()->toDateString(),
-            'requested_by'          => $this->pusat->id,
-            'status'                => 'draft',
+            'po_number' => $this->po->do_number,
+            'transportir_id' => $this->transportir->id,
+            'cylinder_type' => '12kg',
+            'quantity_ordered' => 100,
+            'order_date' => today()->toDateString(),
+            'requested_by' => $this->pusat->id,
+            'status' => 'draft',
         ]);
     }
 
@@ -141,7 +146,7 @@ class LoadingOrderKindTest extends TestCase
             ->assertJsonPath('data.cost_borne_by', 'transporter')
             ->assertJsonPath('data.destination_branch.id', $this->otherBranch->id);
 
-        $this->assertStringStartsWith('LOT' . now()->year . '-', $response->json('data.do_number'));
+        $this->assertStringStartsWith('LOT'.now()->year.'-', $response->json('data.do_number'));
     }
 
     #[Test]
@@ -200,7 +205,7 @@ class LoadingOrderKindTest extends TestCase
             ->assertJsonPath('data.cost_borne_by', 'sum')
             ->assertJsonPath('data.expedition_cost', 15000);
 
-        $this->assertStringStartsWith('LOE' . now()->year . '-', $response->json('data.do_number'));
+        $this->assertStringStartsWith('LOE'.now()->year.'-', $response->json('data.do_number'));
 
         $created = DeliveryOrder::where('do_number', $response->json('data.do_number'))->firstOrFail();
         $this->assertTrue($created->isExpeditionLoadingOrder());
@@ -228,7 +233,7 @@ class LoadingOrderKindTest extends TestCase
 
         $response = $this->postJson('/api/v1/loading-orders', $this->transportirPayload([
             'expedition_cost' => 99999,
-            'cost_borne_by'   => 'sum',
+            'cost_borne_by' => 'sum',
         ]));
 
         $response->assertCreated();
@@ -246,20 +251,20 @@ class LoadingOrderKindTest extends TestCase
         $parent = $this->createTransportirLo();
 
         $loe = DeliveryOrder::create([
-            'do_number'             => 'LOE2026-001',
-            'document_type'         => 'lo',
-            'lo_kind'               => 'expedition',
-            'origin_branch_id'      => $this->mainBranch->id,
+            'do_number' => 'LOE2026-001',
+            'document_type' => 'lo',
+            'lo_kind' => 'expedition',
+            'origin_branch_id' => $this->mainBranch->id,
             'destination_branch_id' => $this->otherBranch->id,
             'transportir_lo_number' => $parent->do_number,
-            'expedition_id'         => $this->expedition->id,
-            'cost_borne_by'         => 'sum',
-            'expedition_cost'       => 15000,
-            'cylinder_type'         => '12kg',
-            'quantity_ordered'      => 100,
-            'order_date'            => today()->toDateString(),
-            'requested_by'          => $this->pusat->id,
-            'status'                => 'draft',
+            'expedition_id' => $this->expedition->id,
+            'cost_borne_by' => 'sum',
+            'expedition_cost' => 15000,
+            'cylinder_type' => '12kg',
+            'quantity_ordered' => 100,
+            'order_date' => today()->toDateString(),
+            'requested_by' => $this->pusat->id,
+            'status' => 'draft',
         ]);
 
         $this->postJson("/api/v1/loading-orders/{$loe->id}/submit")
@@ -276,17 +281,17 @@ class LoadingOrderKindTest extends TestCase
         $parent = $this->createTransportirLo();
 
         DeliveryOrder::create([
-            'do_number'             => 'LOE2026-001',
-            'document_type'         => 'lo',
-            'lo_kind'               => 'expedition',
-            'origin_branch_id'      => $this->mainBranch->id,
+            'do_number' => 'LOE2026-001',
+            'document_type' => 'lo',
+            'lo_kind' => 'expedition',
+            'origin_branch_id' => $this->mainBranch->id,
             'destination_branch_id' => $this->otherBranch->id,
             'transportir_lo_number' => $parent->do_number,
-            'cylinder_type'         => '12kg',
-            'quantity_ordered'      => 100,
-            'order_date'            => today()->toDateString(),
-            'requested_by'          => $this->pusat->id,
-            'status'                => 'draft',
+            'cylinder_type' => '12kg',
+            'quantity_ordered' => 100,
+            'order_date' => today()->toDateString(),
+            'requested_by' => $this->pusat->id,
+            'status' => 'draft',
         ]);
 
         $this->assertSame(1, DeliveryOrder::transportirLoadingOrders()->count());

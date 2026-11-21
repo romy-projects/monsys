@@ -5,6 +5,7 @@ namespace App\Filament\Pages;
 use App\Models\Branch;
 use App\Models\Invoice;
 use Filament\Pages\Page;
+use Illuminate\Support\Collection;
 
 class ReceivablesAging extends Page
 {
@@ -29,19 +30,24 @@ class ReceivablesAging extends Page
     {
         $user = auth()->user();
 
-        if (! $user->isOwnerPusat() && ! $user->isRegionalLeader()) {
-            $this->branch_id = $user->branch_id;
+        if (! $user->canAccessAllBranches()) {
+            $this->branch_id = $user->branch_id && $user->canAccessBranch((int) $user->branch_id)
+                ? (int) $user->branch_id
+                : (count($user->accessibleBranchIds()) === 1 ? $user->accessibleBranchIds()[0] : null);
         }
     }
 
-    public function getBranches(): \Illuminate\Support\Collection
+    public function getBranches(): Collection
     {
-        return Branch::active()->orderBy('name')->pluck('name', 'id');
+        $query = Branch::active()->orderBy('name');
+        auth()->user()?->applyAccessibleBranchScope($query, 'branches.id');
+
+        return $query->pluck('name', 'id');
     }
 
     public function getAgingData(): array
     {
-        $user  = auth()->user();
+        $user = auth()->user();
         $today = today();
 
         $query = Invoice::query()
@@ -50,16 +56,14 @@ class ReceivablesAging extends Page
 
         if ($this->branch_id) {
             $query->where('branch_id', $this->branch_id);
-        } elseif (! $user->isOwnerPusat() && ! $user->isRegionalLeader()) {
-            $query->where('branch_id', $user->branch_id);
         }
 
         $buckets = [
             'current' => ['label' => 'Current (not yet due)',  'color' => 'green',  'items' => collect()],
-            '1_30'    => ['label' => '1–30 days overdue',      'color' => 'yellow', 'items' => collect()],
-            '31_60'   => ['label' => '31–60 days overdue',     'color' => 'orange', 'items' => collect()],
-            '61_90'   => ['label' => '61–90 days overdue',     'color' => 'red',    'items' => collect()],
-            '90plus'  => ['label' => '> 90 days overdue',      'color' => 'red',    'items' => collect()],
+            '1_30' => ['label' => '1–30 days overdue',      'color' => 'yellow', 'items' => collect()],
+            '31_60' => ['label' => '31–60 days overdue',     'color' => 'orange', 'items' => collect()],
+            '61_90' => ['label' => '61–90 days overdue',     'color' => 'red',    'items' => collect()],
+            '90plus' => ['label' => '> 90 days overdue',      'color' => 'red',    'items' => collect()],
         ];
 
         $grandTotal = 0.0;
@@ -82,38 +86,38 @@ class ReceivablesAging extends Page
                     $daysLate <= 30 => '1_30',
                     $daysLate <= 60 => '31_60',
                     $daysLate <= 90 => '61_90',
-                    default         => '90plus',
+                    default => '90plus',
                 };
             }
 
             $buckets[$key]['items']->push([
-                'id'             => $r->id,
-                'branch'         => $r->branch,
-                'buyer_name'     => $r->customer?->name ?? $r->branch?->name,
-                'buyer_type'     => $r->customer?->type ?? '—',
+                'id' => $r->id,
+                'branch' => $r->branch,
+                'buyer_name' => $r->customer?->name ?? $r->branch?->name,
+                'buyer_type' => $r->customer?->type ?? '—',
                 'invoice_number' => $r->invoice_number,
-                'invoice_date'   => $r->issue_date,
-                'due_date'       => $r->due_date,
-                'amount'         => (float) $r->total_amount,
-                'paid_amount'    => (float) $r->paid_amount,
-                'balance'        => $balance,
-                'days_overdue'   => $r->due_date->lt($today) ? $today->diffInDays($r->due_date) : 0,
+                'invoice_date' => $r->issue_date,
+                'due_date' => $r->due_date,
+                'amount' => (float) $r->total_amount,
+                'paid_amount' => (float) $r->paid_amount,
+                'balance' => $balance,
+                'days_overdue' => $r->due_date->lt($today) ? $today->diffInDays($r->due_date) : 0,
             ]);
         });
 
         return [
-            'buckets'     => $buckets,
+            'buckets' => $buckets,
             'grand_total' => $grandTotal,
         ];
     }
 
     public static function canAccess(): bool
     {
-        return auth()->user()?->canViewFinance() ?? false;
+        return auth()->user()?->hasPermission('reports.receivables_aging.view') ?? false;
     }
 
     public static function shouldRegisterNavigation(): bool
     {
-        return auth()->user()?->isOwnerPusat() ?? false;
+        return auth()->user()?->hasPermission('reports.receivables_aging.view') ?? false;
     }
 }

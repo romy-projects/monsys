@@ -6,7 +6,9 @@ use App\Models\Branch;
 use App\Models\DailySale;
 use App\Models\LpgPrice;
 use App\Models\OperationalCost;
+use Filament\Actions\Action;
 use Filament\Pages\Page;
+use Illuminate\Database\Eloquent\Collection;
 
 class ProfitLossReport extends Page
 {
@@ -22,21 +24,23 @@ class ProfitLossReport extends Page
 
     protected static ?string $title = 'Profit & Loss Report / Laporan Laba Rugi';
 
-    public ?int $branch_id   = null;
+    public ?int $branch_id = null;
+
     public string $start_date = '';
-    public string $end_date   = '';
+
+    public string $end_date = '';
 
     protected function getHeaderActions(): array
     {
         return [
-            \Filament\Actions\Action::make('export_csv')
+            Action::make('export_csv')
                 ->label('Export CSV')
                 ->icon('heroicon-o-arrow-down-tray')
                 ->color('gray')
-                ->url(fn() => route('export.pl', array_filter([
-                    'branch_id'  => $this->branch_id,
+                ->url(fn () => route('export.pl', array_filter([
+                    'branch_id' => $this->branch_id,
                     'start_date' => $this->start_date,
-                    'end_date'   => $this->end_date,
+                    'end_date' => $this->end_date,
                 ])))
                 ->openUrlInNewTab(),
         ];
@@ -46,44 +50,45 @@ class ProfitLossReport extends Page
     {
         $user = auth()->user();
 
-        if (! $user?->canViewFinance()) {
+        if (! $user?->hasPermission('reports.profit_loss.view')) {
             abort(403, 'You do not have access to financial reports.');
         }
 
-        if (! $user->isOwnerPusat() && ! $user->isRegionalLeader()) {
-            $this->branch_id = $user->branch_id;
+        if (! $user->canAccessAllBranches()) {
+            $this->branch_id = $user->branch_id && $user->canAccessBranch((int) $user->branch_id)
+                ? (int) $user->branch_id
+                : (count($user->accessibleBranchIds()) === 1 ? $user->accessibleBranchIds()[0] : null);
         }
 
         $this->start_date = now()->startOfMonth()->toDateString();
-        $this->end_date   = now()->toDateString();
+        $this->end_date = now()->toDateString();
     }
 
-    public function getBranches(): \Illuminate\Database\Eloquent\Collection
+    public function getBranches(): Collection
     {
         $user = auth()->user();
 
-        if ($user?->isOwnerPusat() || $user?->isRegionalLeader()) {
-            return Branch::active()->orderBy('name')->get();
-        }
+        $query = Branch::active()->orderBy('name');
+        $user?->applyAccessibleBranchScope($query, 'branches.id');
 
-        return Branch::where('id', $user?->branch_id)->get();
+        return $query->get();
     }
 
     public function getReportData(): array
     {
-        $branchId  = $this->branch_id;
+        $branchId = $this->branch_id;
         $startDate = $this->start_date ?: now()->startOfMonth()->toDateString();
-        $endDate   = $this->end_date   ?: now()->toDateString();
+        $endDate = $this->end_date ?: now()->toDateString();
 
         $salesQuery = DailySale::query()
             ->whereBetween('sale_date', [$startDate, $endDate])
-            ->when($branchId, fn($q) => $q->where('branch_id', $branchId));
+            ->when($branchId, fn ($q) => $q->where('branch_id', $branchId));
 
         $totalRevenue = (float) $salesQuery->sum('total_revenue');
 
         $revenueByType = DailySale::query()
             ->whereBetween('sale_date', [$startDate, $endDate])
-            ->when($branchId, fn($q) => $q->where('branch_id', $branchId))
+            ->when($branchId, fn ($q) => $q->where('branch_id', $branchId))
             ->selectRaw('cylinder_type, SUM(total_revenue) as total, SUM(quantity) as qty')
             ->groupBy('cylinder_type')
             ->get()
@@ -91,7 +96,7 @@ class ProfitLossReport extends Page
 
         $costsByCategory = OperationalCost::query()
             ->whereBetween('cost_date', [$startDate, $endDate])
-            ->when($branchId, fn($q) => $q->where('branch_id', $branchId))
+            ->when($branchId, fn ($q) => $q->where('branch_id', $branchId))
             ->selectRaw('cost_category, SUM(amount) as total')
             ->groupBy('cost_category')
             ->pluck('total', 'cost_category');
@@ -99,7 +104,7 @@ class ProfitLossReport extends Page
         // ── HPP calculation: match each sale's price at its sale_date ──
         $allSalesInPeriod = DailySale::query()
             ->whereBetween('sale_date', [$startDate, $endDate])
-            ->when($branchId, fn($q) => $q->where('branch_id', $branchId))
+            ->when($branchId, fn ($q) => $q->where('branch_id', $branchId))
             ->select(['branch_id', 'sale_date', 'cylinder_type', 'quantity', 'lpg_price_id', 'purchase_price_at_sale'])
             ->get();
 
@@ -109,51 +114,53 @@ class ProfitLossReport extends Page
         $hppDetails = [];
         foreach ($revenueByType as $type => $data) {
             $qtySold = (int) $data->qty;
-            if ($qtySold <= 0) continue;
+            if ($qtySold <= 0) {
+                continue;
+            }
 
             $typeSales = $allSalesInPeriod->where('cylinder_type', $type);
-            $typeHpp   = LpgPrice::totalHppForSales($typeSales, $branchId);
-            $avgHpp    = $qtySold > 0 ? round($typeHpp / $qtySold, 2) : 0;
+            $typeHpp = LpgPrice::totalHppForSales($typeSales, $branchId);
+            $avgHpp = $qtySold > 0 ? round($typeHpp / $qtySold, 2) : 0;
 
             $hppDetails[$type] = [
-                'qty'         => $qtySold,
-                'avg_hpp'     => $avgHpp,
-                'total_hpp'   => $typeHpp,
-                'total_rev'   => (float) $data->total,
+                'qty' => $qtySold,
+                'avg_hpp' => $avgHpp,
+                'total_hpp' => $typeHpp,
+                'total_rev' => (float) $data->total,
             ];
         }
 
-        $totalCosts    = (float) $costsByCategory->sum();
+        $totalCosts = (float) $costsByCategory->sum();
         $totalExpenses = $totalHpp + $totalCosts;
-        $grossProfit   = $totalRevenue - $totalExpenses;
-        $margin        = $totalRevenue > 0 ? round(($grossProfit / $totalRevenue) * 100, 1) : 0;
+        $grossProfit = $totalRevenue - $totalExpenses;
+        $margin = $totalRevenue > 0 ? round(($grossProfit / $totalRevenue) * 100, 1) : 0;
 
         $categoryLabels = [
-            'fuel'      => '⛽ Fuel / BBM',
-            'salary'    => '👷 Salary / Gaji',
+            'fuel' => '⛽ Fuel / BBM',
+            'salary' => '👷 Salary / Gaji',
             'logistics' => '🚛 Logistics / Ongkir',
-            'levy'      => '🏛️ Levy / Retribusi',
-            'other'     => '📋 Other / Lain-lain',
+            'levy' => '🏛️ Levy / Retribusi',
+            'other' => '📋 Other / Lain-lain',
         ];
 
         return [
-            'total_revenue'     => $totalRevenue,
-            'revenue_by_type'   => $revenueByType,
-            'hpp_details'       => $hppDetails,
-            'total_hpp'         => $totalHpp,
+            'total_revenue' => $totalRevenue,
+            'revenue_by_type' => $revenueByType,
+            'hpp_details' => $hppDetails,
+            'total_hpp' => $totalHpp,
             'costs_by_category' => $costsByCategory,
-            'category_labels'   => $categoryLabels,
-            'total_cost_ops'    => $totalCosts,
-            'total_expenses'    => $totalExpenses,
-            'gross_profit'      => $grossProfit,
-            'margin'            => $margin,
-            'start_date'        => $startDate,
-            'end_date'          => $endDate,
+            'category_labels' => $categoryLabels,
+            'total_cost_ops' => $totalCosts,
+            'total_expenses' => $totalExpenses,
+            'gross_profit' => $grossProfit,
+            'margin' => $margin,
+            'start_date' => $startDate,
+            'end_date' => $endDate,
         ];
     }
 
     public static function canAccess(): bool
     {
-        return auth()->user()?->canViewFinance() ?? false;
+        return auth()->user()?->hasPermission('reports.profit_loss.view') ?? false;
     }
 }

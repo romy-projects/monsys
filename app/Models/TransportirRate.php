@@ -30,7 +30,7 @@ class TransportirRate extends Model
 
     protected $casts = [
         'effective_date' => 'date',
-        'rate'           => 'decimal:2',
+        'rate' => 'decimal:2',
     ];
 
     public function transportir(): BelongsTo

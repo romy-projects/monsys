@@ -5,6 +5,7 @@ namespace App\Filament\Pages;
 use App\Models\Branch;
 use App\Models\DailySale;
 use Filament\Pages\Page;
+use Illuminate\Database\Eloquent\Collection;
 
 class SalesPeriodReport extends Page
 {
@@ -18,9 +19,11 @@ class SalesPeriodReport extends Page
 
     protected static ?string $title = 'Sales Report / Laporan Penjualan';
 
-    public ?int $branch_id    = null;
+    public ?int $branch_id = null;
+
     public string $start_date = '';
-    public string $end_date   = '';
+
+    public string $end_date = '';
 
     public static function getNavigationLabel(): string
     {
@@ -31,35 +34,36 @@ class SalesPeriodReport extends Page
     {
         $user = auth()->user();
 
-        if (! $user?->isOwnerPusat() && ! $user?->isRegionalLeader()) {
-            $this->branch_id = $user->branch_id;
+        if ($user !== null && ! $user->canAccessAllBranches()) {
+            $this->branch_id = $user->branch_id && $user->canAccessBranch((int) $user->branch_id)
+                ? (int) $user->branch_id
+                : (count($user->accessibleBranchIds()) === 1 ? $user->accessibleBranchIds()[0] : null);
         }
 
         $this->start_date = now()->startOfMonth()->toDateString();
-        $this->end_date   = now()->toDateString();
+        $this->end_date = now()->toDateString();
     }
 
-    public function getBranches(): \Illuminate\Database\Eloquent\Collection
+    public function getBranches(): Collection
     {
         $user = auth()->user();
 
-        if ($user?->isOwnerPusat() || $user?->isRegionalLeader()) {
-            return Branch::active()->orderBy('name')->get();
-        }
+        $query = Branch::active()->orderBy('name');
+        $user?->applyAccessibleBranchScope($query, 'branches.id');
 
-        return Branch::where('id', $user?->branch_id)->get();
+        return $query->get();
     }
 
     public function getReportData(): array
     {
         $startDate = $this->start_date ?: now()->startOfMonth()->toDateString();
-        $endDate   = $this->end_date   ?: now()->toDateString();
-        $branchId  = $this->branch_id;
+        $endDate = $this->end_date ?: now()->toDateString();
+        $branchId = $this->branch_id;
 
         // Sales by cylinder type for the selected branch/all branches
         $byType = DailySale::query()
             ->whereBetween('sale_date', [$startDate, $endDate])
-            ->when($branchId, fn($q) => $q->where('branch_id', $branchId))
+            ->when($branchId, fn ($q) => $q->where('branch_id', $branchId))
             ->selectRaw('cylinder_type, SUM(quantity) as total_qty, SUM(total_revenue) as total_revenue, COUNT(DISTINCT sale_date) as days_active')
             ->groupBy('cylinder_type')
             ->get()
@@ -68,13 +72,13 @@ class SalesPeriodReport extends Page
         // Daily trend
         $byDate = DailySale::query()
             ->whereBetween('sale_date', [$startDate, $endDate])
-            ->when($branchId, fn($q) => $q->where('branch_id', $branchId))
+            ->when($branchId, fn ($q) => $q->where('branch_id', $branchId))
             ->selectRaw('sale_date, SUM(quantity) as total_qty, SUM(total_revenue) as total_revenue')
             ->groupBy('sale_date')
             ->orderBy('sale_date')
             ->get();
 
-        // Per-branch breakdown (only for HQ/regional view without branch filter)
+        // Per-branch breakdown for all accessible branches when no filter is selected.
         $byBranch = [];
         if (! $branchId) {
             $byBranch = DailySale::query()
@@ -86,22 +90,22 @@ class SalesPeriodReport extends Page
         }
 
         $totalRevenue = (float) $byType->sum('total_revenue');
-        $totalQty     = (int)   $byType->sum('total_qty');
+        $totalQty = (int) $byType->sum('total_qty');
 
         return [
-            'by_type'       => $byType,
-            'by_date'       => $byDate,
-            'by_branch'     => $byBranch,
+            'by_type' => $byType,
+            'by_date' => $byDate,
+            'by_branch' => $byBranch,
             'total_revenue' => $totalRevenue,
-            'total_qty'     => $totalQty,
-            'start_date'    => $startDate,
-            'end_date'      => $endDate,
-            'types'         => ['3kg', '5.5kg', '12kg', '50kg'],
+            'total_qty' => $totalQty,
+            'start_date' => $startDate,
+            'end_date' => $endDate,
+            'types' => ['3kg', '5.5kg', '12kg', '50kg'],
         ];
     }
 
     public static function canAccess(): bool
     {
-        return auth()->check();
+        return auth()->user()?->hasPermission('reports.sales_period.view') ?? false;
     }
 }

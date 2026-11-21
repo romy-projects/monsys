@@ -16,6 +16,7 @@ class LpgPriceTransactionFlowTest extends TestCase
     use RefreshDatabase;
 
     private Branch $branch;
+
     private User $branchOwner;
 
     protected function setUp(): void

@@ -24,21 +24,16 @@ class DeliveryOrderController extends Controller
     public function index(Request $request): JsonResponse
     {
         $user = $request->user();
-
-        // Only Pusat/Regional can access DOs — branches use Purchase Orders (PO) instead
-        if (! $user->isOwnerPusat() && ! $user->isRegionalLeader()) {
-            return $this->forbidden('Only Pusat/Regional can access Delivery Orders. Other branches use Purchase Orders.');
+        if (! $user->hasPermission('legacy_delivery_orders.view') || ! $user->canAccessAllBranches()) {
+            return $this->forbidden();
+        }
+        if ($request->filled('document_type') && $request->input('document_type') !== 'do') {
+            return $this->error('This endpoint only exposes legacy Delivery Orders.', 422);
         }
 
-        $query = DeliveryOrder::query()
+        $query = DeliveryOrder::deliveryOrders()
+            ->accessibleTo($user)
             ->with(['originBranch', 'destinationBranch', 'transportir', 'expedition', 'vehicle']);
-
-        // Default: only show actual DOs (not SO/LO/PO) unless document_type is specified
-        if ($request->filled('document_type')) {
-            $query->where('document_type', $request->document_type);
-        } else {
-            $query->where('document_type', 'do');
-        }
 
         if ($request->filled('status')) {
             $query->where('status', $request->status);
@@ -50,11 +45,14 @@ class DeliveryOrderController extends Controller
             $query->where('cylinder_type', $request->cylinder_type);
         }
         if ($request->filled('branch_id')) {
-            $query->where(
-                fn($q) => $q
-                    ->where('origin_branch_id', $request->branch_id)
-                    ->orWhere('destination_branch_id', $request->branch_id)
-            );
+            if (! $user->canAccessBranch((int) $request->branch_id)) {
+                return $this->forbidden();
+            }
+
+            $query->where(function ($q) use ($request): void {
+                $q->where('origin_branch_id', $request->branch_id)
+                    ->orWhere('destination_branch_id', $request->branch_id);
+            });
         }
         if ($request->filled('from')) {
             $query->whereDate('order_date', '>=', $request->from);
@@ -78,9 +76,11 @@ class DeliveryOrderController extends Controller
 
     private function authorizeView($user, DeliveryOrder $do): void
     {
-        if ($user->isOwnerPusat() || $user->isRegionalLeader()) return;
-        if ($do->origin_branch_id === $user->branch_id) return;
-        if ($do->destination_branch_id === $user->branch_id) return;
-        abort(403);
+        abort_unless(
+            $do->document_type === 'do' &&
+                $user->hasPermission('legacy_delivery_orders.view') &&
+                $user->canAccessModelRecord($do, 'view'),
+            403
+        );
     }
 }

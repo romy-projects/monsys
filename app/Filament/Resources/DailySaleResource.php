@@ -10,9 +10,9 @@ use App\Support\LpgPriceFormState;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
+use Filament\Support\Enums\FontWeight;
 use Filament\Tables;
 use Filament\Tables\Table;
-use Illuminate\Database\Eloquent\Builder;
 
 class DailySaleResource extends Resource
 {
@@ -37,22 +37,25 @@ class DailySaleResource extends Resource
     public static function form(Form $form): Form
     {
         $user = auth()->user();
+        $branchIds = $user?->accessibleBranchIds() ?? [];
+        $branchQuery = Branch::active();
+        $user?->applyAccessibleBranchScope($branchQuery, 'branches.id');
+        $branchOptions = $branchQuery->pluck('name', 'id');
+        $defaultBranchId = $user?->branch_id !== null && in_array((int) $user->branch_id, $branchIds, true)
+            ? $user->branch_id
+            : ($branchIds[0] ?? null);
 
         return $form->schema([
             Forms\Components\Section::make('Sale Information')
                 ->schema([
                     Forms\Components\Select::make('branch_id')
                         ->label('Branch / Cabang')
-                        ->options(
-                            $user?->isOwnerPusat() || $user?->isRegionalLeader()
-                                ? Branch::active()->pluck('name', 'id')
-                                : Branch::where('id', $user?->branch_id)->pluck('name', 'id')
-                        )
-                        ->default($user?->branch_id)
+                        ->options($branchOptions)
+                        ->default($defaultBranchId)
                         ->required()
                         ->searchable()
                         ->live()
-                        ->afterStateUpdated(fn(Forms\Get $get, Forms\Set $set) => LpgPriceFormState::sync($get, $set, 'selling_price', true))
+                        ->afterStateUpdated(fn (Forms\Get $get, Forms\Set $set) => LpgPriceFormState::sync($get, $set, 'selling_price', true))
                         ->columnSpan(1),
 
                     Forms\Components\DatePicker::make('sale_date')
@@ -60,27 +63,27 @@ class DailySaleResource extends Resource
                         ->required()
                         ->default(today())
                         ->live()
-                        ->afterStateUpdated(fn(Forms\Get $get, Forms\Set $set) => LpgPriceFormState::sync($get, $set, 'selling_price', true))
+                        ->afterStateUpdated(fn (Forms\Get $get, Forms\Set $set) => LpgPriceFormState::sync($get, $set, 'selling_price', true))
                         ->columnSpan(1),
 
                     Forms\Components\Select::make('cylinder_type')
                         ->label('Cylinder Type / Jenis Tabung')
                         ->options([
-                            '3kg'   => '3 kg',
+                            '3kg' => '3 kg',
                             '5.5kg' => '5.5 kg',
-                            '12kg'  => '12 kg',
-                            '50kg'  => '50 kg',
+                            '12kg' => '12 kg',
+                            '50kg' => '50 kg',
                         ])
                         ->required()
                         ->live()
-                        ->afterStateUpdated(fn(Forms\Get $get, Forms\Set $set) => LpgPriceFormState::sync($get, $set, 'selling_price', true))
+                        ->afterStateUpdated(fn (Forms\Get $get, Forms\Set $set) => LpgPriceFormState::sync($get, $set, 'selling_price', true))
                         ->columnSpan(1),
 
                     Forms\Components\Select::make('buyer_type')
                         ->label('Buyer Type / Jenis Pembeli')
                         ->options([
-                            'retail'    => 'Retail / Eceran',
-                            'agent'     => 'Agent / Agen',
+                            'retail' => 'Retail / Eceran',
+                            'agent' => 'Agent / Agen',
                             'corporate' => 'Corporate / Perusahaan',
                         ])
                         ->required()
@@ -89,11 +92,10 @@ class DailySaleResource extends Resource
 
                     Forms\Components\Select::make('customer_id')
                         ->label('Customer (Optional)')
-                        ->options(function () use ($user) {
+                        ->options(function (Forms\Get $get) {
                             $query = Customer::active()->orderBy('name');
-
-                            if (! $user?->isOwnerPusat() && ! $user?->isRegionalLeader()) {
-                                $query->where('branch_id', $user?->branch_id);
+                            if (filled($get('branch_id'))) {
+                                $query->where('branch_id', $get('branch_id'));
                             }
 
                             return $query->pluck('name', 'id');
@@ -117,8 +119,8 @@ class DailySaleResource extends Resource
 
                     Forms\Components\Placeholder::make('lpg_price_reference')
                         ->label('LPG Price Reference')
-                        ->content(fn(Forms\Get $get) => $get('lpg_price_id')
-                            ? 'LPG Price #' . $get('lpg_price_id')
+                        ->content(fn (Forms\Get $get) => $get('lpg_price_id')
+                            ? 'LPG Price #'.$get('lpg_price_id')
                             : 'Select branch and cylinder type to load the effective LPG Price.')
                         ->columnSpan(1),
 
@@ -148,12 +150,7 @@ class DailySaleResource extends Resource
 
         return $table
             ->modifyQueryUsing(
-                fn($query) =>
-                $query->with(['branch', 'createdBy', 'lpgPrice'])
-                    ->when(
-                        ! $user?->isOwnerPusat() && ! $user?->isRegionalLeader(),
-                        fn($q) => $q->where('branch_id', $user?->branch_id)
-                    )
+                fn ($query) => $query->with(['branch', 'createdBy', 'lpgPrice'])
             )
             ->columns([
                 Tables\Columns\TextColumn::make('sale_date')
@@ -174,27 +171,27 @@ class DailySaleResource extends Resource
                 Tables\Columns\TextColumn::make('buyer_type')
                     ->label('Buyer')
                     ->badge()
-                    ->color(fn($state) => match ($state) {
-                        'retail'    => 'gray',
-                        'agent'     => 'warning',
+                    ->color(fn ($state) => match ($state) {
+                        'retail' => 'gray',
+                        'agent' => 'warning',
                         'corporate' => 'primary',
-                        default     => 'gray',
+                        default => 'gray',
                     })
-                    ->formatStateUsing(fn($state) => match ($state) {
-                        'retail'    => 'Retail',
-                        'agent'     => 'Agent',
+                    ->formatStateUsing(fn ($state) => match ($state) {
+                        'retail' => 'Retail',
+                        'agent' => 'Agent',
                         'corporate' => 'Corporate',
-                        default     => $state,
+                        default => $state,
                     }),
 
                 Tables\Columns\TextColumn::make('quantity')
                     ->label('Qty')
-                    ->formatStateUsing(fn($state) => number_format($state) . ' pcs')
+                    ->formatStateUsing(fn ($state) => number_format($state).' pcs')
                     ->sortable(),
 
                 Tables\Columns\TextColumn::make('selling_price')
                     ->label('Price/Unit')
-                    ->formatStateUsing(fn($state) => 'Rp ' . number_format($state, 0, ',', '.')),
+                    ->formatStateUsing(fn ($state) => 'Rp '.number_format($state, 0, ',', '.')),
 
                 Tables\Columns\TextColumn::make('lpgPrice.id')
                     ->label('LPG Price #')
@@ -209,8 +206,8 @@ class DailySaleResource extends Resource
 
                 Tables\Columns\TextColumn::make('total_revenue')
                     ->label('Total Revenue')
-                    ->formatStateUsing(fn($state) => 'Rp ' . number_format($state, 0, ',', '.'))
-                    ->weight(\Filament\Support\Enums\FontWeight::SemiBold)
+                    ->formatStateUsing(fn ($state) => 'Rp '.number_format($state, 0, ',', '.'))
+                    ->weight(FontWeight::SemiBold)
                     ->color('success')
                     ->sortable(),
 
@@ -227,21 +224,26 @@ class DailySaleResource extends Resource
             ->filters([
                 Tables\Filters\SelectFilter::make('branch_id')
                     ->label('Branch')
-                    ->options(Branch::active()->pluck('name', 'id'))
-                    ->visible(fn() => $user?->isOwnerPusat() || $user?->isRegionalLeader()),
+                    ->options(function () use ($user) {
+                        $query = Branch::active();
+                        $user?->applyAccessibleBranchScope($query, 'branches.id');
+
+                        return $query->pluck('name', 'id');
+                    })
+                    ->visible(fn () => $user?->canAccessAllBranches() || count($user?->accessibleBranchIds() ?? []) > 1),
 
                 Tables\Filters\SelectFilter::make('cylinder_type')
                     ->options([
-                        '3kg'   => '3 kg',
+                        '3kg' => '3 kg',
                         '5.5kg' => '5.5 kg',
-                        '12kg'  => '12 kg',
-                        '50kg'  => '50 kg',
+                        '12kg' => '12 kg',
+                        '50kg' => '50 kg',
                     ]),
 
                 Tables\Filters\SelectFilter::make('buyer_type')
                     ->options([
-                        'retail'    => 'Retail',
-                        'agent'     => 'Agent',
+                        'retail' => 'Retail',
+                        'agent' => 'Agent',
                         'corporate' => 'Corporate',
                     ]),
 
@@ -251,16 +253,18 @@ class DailySaleResource extends Resource
                         Forms\Components\DatePicker::make('until')->label('Until'),
                     ])
                     ->query(
-                        fn($query, array $data) => $query
-                            ->when($data['from'],  fn($q) => $q->whereDate('sale_date', '>=', $data['from']))
-                            ->when($data['until'], fn($q) => $q->whereDate('sale_date', '<=', $data['until']))
+                        fn ($query, array $data) => $query
+                            ->when($data['from'], fn ($q) => $q->whereDate('sale_date', '>=', $data['from']))
+                            ->when($data['until'], fn ($q) => $q->whereDate('sale_date', '<=', $data['until']))
                     ),
             ])
             ->actions([
                 Tables\Actions\EditAction::make()
-                    ->visible(fn() => ! auth()->user()->isOwnerPusat() && ! auth()->user()->isRegionalLeader()),
+                    ->visible(fn (DailySale $record) => static::can('update', $record))
+                    ->authorize(fn (DailySale $record) => static::can('update', $record)),
                 Tables\Actions\DeleteAction::make()
-                    ->visible(fn() => ! auth()->user()->isOwnerPusat() && ! auth()->user()->isRegionalLeader()),
+                    ->visible(fn (DailySale $record) => static::can('delete', $record))
+                    ->authorize(fn (DailySale $record) => static::can('delete', $record)),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
@@ -278,17 +282,15 @@ class DailySaleResource extends Resource
     /** Pusat/Regional can only monitor — cannot create sales. */
     public static function canCreate(): bool
     {
-        $user = auth()->user();
-
-        return ! $user->isOwnerPusat() && ! $user->isRegionalLeader();
+        return static::can('create');
     }
 
     public static function getPages(): array
     {
         return [
-            'index'  => Pages\ListDailySales::route('/'),
+            'index' => Pages\ListDailySales::route('/'),
             'create' => Pages\CreateDailySale::route('/create'),
-            'edit'   => Pages\EditDailySale::route('/{record}/edit'),
+            'edit' => Pages\EditDailySale::route('/{record}/edit'),
         ];
     }
 }

@@ -20,6 +20,7 @@ class ReceivablePaymentTest extends TestCase
     use RefreshDatabase;
 
     private Branch $branch;
+
     private User $pusat;
 
     protected function setUp(): void
@@ -27,35 +28,35 @@ class ReceivablePaymentTest extends TestCase
         parent::setUp();
 
         $this->branch = Branch::create([
-            'code'   => 'PST',
-            'name'   => 'SUM Pusat',
-            'city'   => 'Jakarta',
+            'code' => 'PST',
+            'name' => 'SUM Pusat',
+            'city' => 'Jakarta',
             'status' => 'active',
         ]);
 
         $this->pusat = User::create([
-            'name'      => 'Pusat User',
-            'email'     => 'pusat@test.com',
-            'password'  => bcrypt('password'),
-            'role'      => 'owner_pusat',
+            'name' => 'Pusat User',
+            'email' => 'pusat@test.com',
+            'password' => bcrypt('password'),
+            'role' => 'owner_pusat',
             'branch_id' => $this->branch->id,
-            'status'    => 'active',
+            'status' => 'active',
         ]);
     }
 
     private function receivable(array $overrides = []): Receivable
     {
         return Receivable::create(array_merge([
-            'branch_id'      => $this->branch->id,
-            'buyer_name'     => 'Toko Sinar Jaya',
-            'buyer_type'     => 'retail',
+            'branch_id' => $this->branch->id,
+            'buyer_name' => 'Toko Sinar Jaya',
+            'buyer_type' => 'retail',
             'invoice_number' => 'INV-2026-001',
-            'invoice_date'   => today()->toDateString(),
-            'due_date'       => today()->addDays(30)->toDateString(),
-            'amount'         => 1000000,
-            'paid_amount'    => 0,
-            'status'         => 'outstanding',
-            'created_by'     => $this->pusat->id,
+            'invoice_date' => today()->toDateString(),
+            'due_date' => today()->addDays(30)->toDateString(),
+            'amount' => 1000000,
+            'paid_amount' => 0,
+            'status' => 'outstanding',
+            'created_by' => $this->pusat->id,
         ], $overrides));
     }
 
@@ -65,11 +66,11 @@ class ReceivablePaymentTest extends TestCase
         $receivable = $this->receivable();
 
         $payment = app(PaymentLedger::class)->recordReceivable($receivable, [
-            'amount'       => 400000,
-            'paid_on'      => today()->toDateString(),
-            'method'       => 'transfer',
+            'amount' => 400000,
+            'paid_on' => today()->toDateString(),
+            'method' => 'transfer',
             'reference_no' => 'TRF-991',
-            'notes'        => 'Transfer BCA',
+            'notes' => 'Transfer BCA',
         ], $this->pusat->id);
 
         $receivable->refresh();
@@ -87,7 +88,7 @@ class ReceivablePaymentTest extends TestCase
     public function two_payments_accumulate_instead_of_replacing_each_other(): void
     {
         $receivable = $this->receivable();
-        $ledger     = app(PaymentLedger::class);
+        $ledger = app(PaymentLedger::class);
 
         $ledger->recordReceivable($receivable, ['amount' => 250000, 'paid_on' => '2026-01-10'], $this->pusat->id);
         $ledger->recordReceivable($receivable, ['amount' => 350000, 'paid_on' => '2026-02-10'], $this->pusat->id);
@@ -138,7 +139,7 @@ class ReceivablePaymentTest extends TestCase
                 $rejected = true;
             }
 
-            $this->assertTrue($rejected, 'Amount ' . $amount . ' should have been rejected.');
+            $this->assertTrue($rejected, 'Amount '.$amount.' should have been rejected.');
         }
 
         $this->assertSame(0, $receivable->payments()->count());
@@ -149,7 +150,7 @@ class ReceivablePaymentTest extends TestCase
     public function history_keeps_every_instalment_ordered_by_payment_date(): void
     {
         $receivable = $this->receivable();
-        $ledger     = app(PaymentLedger::class);
+        $ledger = app(PaymentLedger::class);
 
         $ledger->recordReceivable($receivable, ['amount' => 100000, 'paid_on' => '2026-02-10', 'method' => 'giro'], $this->pusat->id);
         $ledger->recordReceivable($receivable, ['amount' => 150000, 'paid_on' => '2026-01-10', 'method' => 'cash'], $this->pusat->id);
@@ -186,7 +187,7 @@ class ReceivablePaymentTest extends TestCase
     public function reversing_a_payment_restores_the_previous_balance(): void
     {
         $receivable = $this->receivable();
-        $ledger     = app(PaymentLedger::class);
+        $ledger = app(PaymentLedger::class);
 
         $ledger->recordReceivable($receivable, ['amount' => 400000], $this->pusat->id);
         $payment = $ledger->recordReceivable($receivable, ['amount' => 600000], $this->pusat->id);

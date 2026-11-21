@@ -5,6 +5,7 @@ namespace App\Filament\Pages;
 use App\Models\Branch;
 use App\Models\DeliveryOrder;
 use Filament\Pages\Page;
+use Illuminate\Database\Eloquent\Collection;
 
 class ShipmentTracking extends Page
 {
@@ -18,7 +19,8 @@ class ShipmentTracking extends Page
 
     protected static ?string $title = 'Shipment Tracking / Lacak Kiriman';
 
-    public ?int $branch_id    = null;
+    public ?int $branch_id = null;
+
     public string $status_filter = 'active';
 
     public static function getNavigationLabel(): string
@@ -30,29 +32,31 @@ class ShipmentTracking extends Page
     {
         $user = auth()->user();
 
-        if (! $user?->isOwnerPusat() && ! $user?->isRegionalLeader()) {
-            $this->branch_id = $user->branch_id;
+        if ($user !== null && ! $user->canAccessAllBranches()) {
+            $this->branch_id = $user->branch_id && $user->canAccessBranch((int) $user->branch_id)
+                ? (int) $user->branch_id
+                : (count($user->accessibleBranchIds()) === 1 ? $user->accessibleBranchIds()[0] : null);
         }
     }
 
-    public function getBranches(): \Illuminate\Database\Eloquent\Collection
+    public function getBranches(): Collection
     {
         $user = auth()->user();
 
-        if ($user?->isOwnerPusat() || $user?->isRegionalLeader()) {
-            return Branch::active()->orderBy('name')->get();
-        }
+        $query = Branch::active()->orderBy('name');
+        $user?->applyAccessibleBranchScope($query, 'branches.id');
 
-        return Branch::where('id', $user?->branch_id)->get();
+        return $query->get();
     }
 
-    public function getShipments(): \Illuminate\Database\Eloquent\Collection
+    public function getShipments(): Collection
     {
         $user = auth()->user();
 
         // Shipments are PO (HQ → branch) and LO (transportir/expedition legs).
         // document_type 'do' is legacy history only and must stay out of live tracking (N-GEN-7).
-        $query = DeliveryOrder::with(['originBranch', 'destinationBranch', 'expedition'])
+        $query = DeliveryOrder::accessibleTo($user)
+            ->with(['originBranch', 'destinationBranch', 'expedition'])
             ->whereIn('document_type', ['po', 'lo'])
             ->orderByRaw('(eta IS NULL) ASC, eta ASC');
 
@@ -67,12 +71,6 @@ class ShipmentTracking extends Page
                 $q->where('destination_branch_id', $this->branch_id)
                     ->orWhere('origin_branch_id', $this->branch_id);
             });
-        } elseif (! $user?->isOwnerPusat() && ! $user?->isRegionalLeader()) {
-            $branchId = $user->branch_id;
-            $query->where(function ($q) use ($branchId) {
-                $q->where('destination_branch_id', $branchId)
-                    ->orWhere('origin_branch_id', $branchId);
-            });
         }
 
         return $query->get();
@@ -82,14 +80,6 @@ class ShipmentTracking extends Page
     {
         $user = auth()->user();
 
-        if (! $user) return false;
-
-        // Pusat/Regional always have access
-        if ($user->isOwnerPusat() || $user->isRegionalLeader()) {
-            return true;
-        }
-
-        // Other branches: only if the admin has enabled it via config
-        return (bool) config('app.branch_shipment_tracking', false);
+        return $user?->hasPermission('reports.shipment_tracking.view') ?? false;
     }
 }

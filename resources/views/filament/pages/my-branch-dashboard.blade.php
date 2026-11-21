@@ -2,7 +2,7 @@
 @php
     $d   = $this->getDashboardData();
     $fmt = fn($n) => 'Rp ' . number_format($n, 0, ',', '.');
-    $branch = auth()->user()->branch;
+    $branch = $d['branch'];
 @endphp
 
 <div class="space-y-6">

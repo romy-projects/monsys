@@ -10,6 +10,7 @@ return [
         'finance'   => 'Finance',
         'master'    => 'Master Data',
         'reports'   => 'Reports',
+        'access'    => 'Access Control',
     ],
 
     // Navigation Items
@@ -65,5 +66,9 @@ return [
         'report_audit'       => 'Stock Audit',
         'report_consolidated' => 'Consolidated P&L',
         'notification_log'   => 'Notification Log',
+
+        // Access Control
+        'access_roles'        => 'Access Roles',
+        'impersonation_audit' => 'Impersonation Audit',
     ],
 ];

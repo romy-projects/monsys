@@ -8,6 +8,7 @@ use App\Models\OperationalCost;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
+use Filament\Support\Enums\FontWeight;
 use Filament\Tables;
 use Filament\Tables\Table;
 
@@ -34,18 +35,20 @@ class OperationalCostResource extends Resource
     public static function form(Form $form): Form
     {
         $user = auth()->user();
+        $branchIds = $user?->accessibleBranchIds() ?? [];
+        $branchQuery = Branch::active()->orderBy('name');
+        $user?->applyAccessibleBranchScope($branchQuery, 'branches.id');
+        $defaultBranchId = $user?->branch_id !== null && in_array((int) $user->branch_id, $branchIds, true)
+            ? $user->branch_id
+            : ($branchIds[0] ?? null);
 
         return $form->schema([
             Forms\Components\Section::make('Cost Details')
                 ->schema([
                     Forms\Components\Select::make('branch_id')
                         ->label('Branch / Cabang')
-                        ->options(
-                            $user?->isOwnerPusat() || $user?->isRegionalLeader()
-                                ? Branch::active()->pluck('name', 'id')
-                                : Branch::where('id', $user?->branch_id)->pluck('name', 'id')
-                        )
-                        ->default($user?->branch_id)
+                        ->options($branchQuery->pluck('name', 'id'))
+                        ->default($defaultBranchId)
                         ->required()
                         ->searchable()
                         ->columnSpan(1),
@@ -59,11 +62,11 @@ class OperationalCostResource extends Resource
                     Forms\Components\Select::make('cost_category')
                         ->label('Category / Kategori')
                         ->options([
-                            'fuel'      => '⛽ Fuel / BBM',
-                            'salary'    => '👷 Salary / Gaji',
+                            'fuel' => '⛽ Fuel / BBM',
+                            'salary' => '👷 Salary / Gaji',
                             'logistics' => '🚛 Logistics / Ongkir',
-                            'levy'      => '🏛️ Levy / Retribusi',
-                            'other'     => '📋 Other / Lain-lain',
+                            'levy' => '🏛️ Levy / Retribusi',
+                            'other' => '📋 Other / Lain-lain',
                         ])
                         ->required()
                         ->columnSpan(1),
@@ -99,13 +102,7 @@ class OperationalCostResource extends Resource
         $user = auth()->user();
 
         return $table
-            ->modifyQueryUsing(fn ($query) =>
-                $query->with(['branch', 'createdBy'])
-                    ->when(
-                        ! $user?->isOwnerPusat() && ! $user?->isRegionalLeader(),
-                        fn ($q) => $q->where('branch_id', $user?->branch_id)
-                    )
-            )
+            ->modifyQueryUsing(fn ($query) => $query->with(['branch', 'createdBy']))
             ->columns([
                 Tables\Columns\TextColumn::make('cost_date')
                     ->label('Date')
@@ -121,20 +118,20 @@ class OperationalCostResource extends Resource
                     ->label('Category')
                     ->badge()
                     ->color(fn ($state) => match ($state) {
-                        'fuel'      => 'warning',
-                        'salary'    => 'info',
+                        'fuel' => 'warning',
+                        'salary' => 'info',
                         'logistics' => 'primary',
-                        'levy'      => 'gray',
-                        'other'     => 'secondary',
-                        default     => 'gray',
+                        'levy' => 'gray',
+                        'other' => 'secondary',
+                        default => 'gray',
                     })
                     ->formatStateUsing(fn ($state) => match ($state) {
-                        'fuel'      => '⛽ Fuel',
-                        'salary'    => '👷 Salary',
+                        'fuel' => '⛽ Fuel',
+                        'salary' => '👷 Salary',
                         'logistics' => '🚛 Logistics',
-                        'levy'      => '🏛️ Levy',
-                        'other'     => '📋 Other',
-                        default     => $state,
+                        'levy' => '🏛️ Levy',
+                        'other' => '📋 Other',
+                        default => $state,
                     }),
 
                 Tables\Columns\TextColumn::make('description')
@@ -144,8 +141,8 @@ class OperationalCostResource extends Resource
 
                 Tables\Columns\TextColumn::make('amount')
                     ->label('Amount')
-                    ->formatStateUsing(fn ($state) => 'Rp ' . number_format($state, 0, ',', '.'))
-                    ->weight(\Filament\Support\Enums\FontWeight::SemiBold)
+                    ->formatStateUsing(fn ($state) => 'Rp '.number_format($state, 0, ',', '.'))
+                    ->weight(FontWeight::SemiBold)
                     ->color('danger')
                     ->sortable(),
 
@@ -156,17 +153,23 @@ class OperationalCostResource extends Resource
             ->filters([
                 Tables\Filters\SelectFilter::make('branch_id')
                     ->label('Branch')
-                    ->options(Branch::active()->pluck('name', 'id'))
-                    ->visible(fn () => $user?->isOwnerPusat() || $user?->isRegionalLeader()),
+                    ->options(function () use ($user) {
+                        $query = Branch::active()->orderBy('name');
+                        $user?->applyAccessibleBranchScope($query, 'branches.id');
+
+                        return $query->pluck('name', 'id');
+                    })
+                    ->visible(fn () => $user?->canAccessAllBranches() || count($user?->accessibleBranchIds() ?? []) > 1
+                    ),
 
                 Tables\Filters\SelectFilter::make('cost_category')
                     ->label('Category')
                     ->options([
-                        'fuel'      => 'Fuel / BBM',
-                        'salary'    => 'Salary / Gaji',
+                        'fuel' => 'Fuel / BBM',
+                        'salary' => 'Salary / Gaji',
                         'logistics' => 'Logistics / Ongkir',
-                        'levy'      => 'Levy / Retribusi',
-                        'other'     => 'Other',
+                        'levy' => 'Levy / Retribusi',
+                        'other' => 'Other',
                     ]),
 
                 Tables\Filters\Filter::make('cost_date')
@@ -175,13 +178,17 @@ class OperationalCostResource extends Resource
                         Forms\Components\DatePicker::make('until')->label('Until'),
                     ])
                     ->query(fn ($query, array $data) => $query
-                        ->when($data['from'],  fn ($q) => $q->whereDate('cost_date', '>=', $data['from']))
+                        ->when($data['from'], fn ($q) => $q->whereDate('cost_date', '>=', $data['from']))
                         ->when($data['until'], fn ($q) => $q->whereDate('cost_date', '<=', $data['until']))
                     ),
             ])
             ->actions([
-                Tables\Actions\EditAction::make(),
-                Tables\Actions\DeleteAction::make(),
+                Tables\Actions\EditAction::make()
+                    ->visible(fn ($record) => static::can('update', $record))
+                    ->authorize(fn ($record) => static::can('update', $record)),
+                Tables\Actions\DeleteAction::make()
+                    ->visible(fn ($record) => static::can('delete', $record))
+                    ->authorize(fn ($record) => static::can('delete', $record)),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
@@ -199,19 +206,19 @@ class OperationalCostResource extends Resource
     public static function getPages(): array
     {
         return [
-            'index'  => Pages\ListOperationalCosts::route('/'),
+            'index' => Pages\ListOperationalCosts::route('/'),
             'create' => Pages\CreateOperationalCost::route('/create'),
-            'edit'   => Pages\EditOperationalCost::route('/{record}/edit'),
+            'edit' => Pages\EditOperationalCost::route('/{record}/edit'),
         ];
     }
 
     public static function canAccess(): bool
     {
-        return auth()->user()?->canViewFinance() ?? false;
+        return auth()->user()?->hasPermission('operational_costs.view') ?? false;
     }
 
     public static function shouldRegisterNavigation(): bool
     {
-        return auth()->user()?->isOwnerPusat() ?? false;
+        return auth()->user()?->hasPermission('operational_costs.view') ?? false;
     }
 }

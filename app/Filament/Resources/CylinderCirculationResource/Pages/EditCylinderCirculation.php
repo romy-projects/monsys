@@ -14,7 +14,8 @@ class EditCylinderCirculation extends EditRecord
     protected function getHeaderActions(): array
     {
         return [
-            Actions\DeleteAction::make(),
+            Actions\DeleteAction::make()
+                ->authorize(fn () => CylinderCirculationResource::canDelete($this->getRecord())),
         ];
     }
 

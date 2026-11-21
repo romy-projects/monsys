@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\LoadingOrderResource\Pages;
 
 use App\Filament\Resources\LoadingOrderResource;
+use App\Models\Branch;
 use App\Services\DocumentNumberService;
 use App\Support\OutstandingReconciliations;
 use Filament\Resources\Pages\CreateRecord;
@@ -15,14 +16,24 @@ class CreateLoadingOrder extends CreateRecord
 
     protected function mutateFormDataBeforeCreate(array $data): array
     {
-        $data['document_type']     = 'lo';
-        $data['lo_kind']           = 'transportir';
+        $user = auth()->user();
+        $mainBranch = Branch::mainBranch()->first();
+        abort_unless(
+            $user->hasPermission('loading_orders.create')
+                && $mainBranch !== null
+                && $user->canAccessBranch((int) $mainBranch->id)
+                && $user->canAccessBranch((int) ($data['destination_branch_id'] ?? 0)),
+            403
+        );
+
+        $data['document_type'] = 'lo';
+        $data['lo_kind'] = 'transportir';
         $data['counterparty_type'] = 'pertamina';
-        $data['requested_by']      = auth()->id();
+        $data['requested_by'] = auth()->id();
 
         // A Transportir LO never carries an expedition fee — the transportir
         // arranges (and pays for) its own expedition (BALI-13).
-        $data['cost_borne_by']   = 'transporter';
+        $data['cost_borne_by'] = 'transporter';
         $data['expedition_cost'] = null;
 
         // D6: the credit this LO settles must be referenced in the notes.
@@ -51,4 +62,3 @@ class CreateLoadingOrder extends CreateRecord
         });
     }
 }
-

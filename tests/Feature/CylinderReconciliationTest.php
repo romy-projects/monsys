@@ -2,6 +2,9 @@
 
 namespace Tests\Feature;
 
+use App\Filament\Resources\ReconciliationResource;
+use App\Filament\Resources\ReconciliationResource\Pages\ListReconciliations;
+use App\Filament\Resources\ReconciliationResource\Pages\ViewReconciliation;
 use App\Models\Branch;
 use App\Models\CylinderReconciliation;
 use App\Models\DeliveryOrder;
@@ -9,9 +12,6 @@ use App\Models\LpgPrice;
 use App\Models\ReconciliationSettlement;
 use App\Models\User;
 use App\Services\CylinderReconciliationService;
-use App\Filament\Resources\ReconciliationResource;
-use App\Filament\Resources\ReconciliationResource\Pages\ListReconciliations;
-use App\Filament\Resources\ReconciliationResource\Pages\ViewReconciliation;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
 use PHPUnit\Framework\Attributes\Test;
@@ -28,11 +28,17 @@ class CylinderReconciliationTest extends TestCase
     use RefreshDatabase;
 
     private User $pusat;
+
     private User $branchOwner;
+
     private User $otherOwner;
+
     private User $regional;
+
     private Branch $mainBranch;
+
     private Branch $branch;
+
     private Branch $otherBranch;
 
     protected function setUp(): void
@@ -75,58 +81,58 @@ class CylinderReconciliationTest extends TestCase
     private function deliverChain(int $paid, int $redeemed, int $delivered, string $suffix = '001'): array
     {
         $po = DeliveryOrder::create([
-            'do_number'             => "PO2026-{$suffix}",
-            'document_type'         => 'po',
-            'counterparty_type'     => 'branch',
-            'counterparty_name'     => 'SUM Pusat',
-            'origin_branch_id'      => $this->mainBranch->id,
+            'do_number' => "PO2026-{$suffix}",
+            'document_type' => 'po',
+            'counterparty_type' => 'branch',
+            'counterparty_name' => 'SUM Pusat',
+            'origin_branch_id' => $this->mainBranch->id,
             'destination_branch_id' => $this->branch->id,
-            'cylinder_type'         => '3kg',
-            'quantity_ordered'      => $paid,
-            'order_date'            => '2026-08-10',
-            'requested_by'          => $this->branchOwner->id,
-            'status'                => 'approved',
+            'cylinder_type' => '3kg',
+            'quantity_ordered' => $paid,
+            'order_date' => '2026-08-10',
+            'requested_by' => $this->branchOwner->id,
+            'status' => 'approved',
         ]);
 
         $so = DeliveryOrder::create([
-            'do_number'             => "SO2026-{$suffix}",
-            'document_type'         => 'so',
-            'counterparty_type'     => 'pertamina',
-            'counterparty_name'     => 'Pertamina',
-            'po_number'             => $po->do_number,
-            'origin_branch_id'      => $this->mainBranch->id,
+            'do_number' => "SO2026-{$suffix}",
+            'document_type' => 'so',
+            'counterparty_type' => 'pertamina',
+            'counterparty_name' => 'Pertamina',
+            'po_number' => $po->do_number,
+            'origin_branch_id' => $this->mainBranch->id,
             'destination_branch_id' => $this->branch->id,
-            'cylinder_type'         => '3kg',
-            'quantity_ordered'      => $redeemed,
-            'order_date'            => '2026-08-10',
-            'requested_by'          => $this->pusat->id,
-            'status'                => 'approved',
+            'cylinder_type' => '3kg',
+            'quantity_ordered' => $redeemed,
+            'order_date' => '2026-08-10',
+            'requested_by' => $this->pusat->id,
+            'status' => 'approved',
         ]);
 
         // D5: the PO carries the purchase-price snapshot used for every settlement value.
         LpgPrice::create([
-            'branch_id'         => $this->branch->id,
+            'branch_id' => $this->branch->id,
             'purchase_order_id' => $po->id,
-            'cylinder_type'     => '3kg',
-            'purchase_price'    => 10000,
-            'selling_price'     => 13000,
-            'effective_date'    => '2026-08-01',
-            'created_by'        => $this->pusat->id,
+            'cylinder_type' => '3kg',
+            'purchase_price' => 10000,
+            'selling_price' => 13000,
+            'effective_date' => '2026-08-01',
+            'created_by' => $this->pusat->id,
         ]);
 
         $lo = DeliveryOrder::create([
-            'do_number'             => "LOT2026-{$suffix}",
-            'document_type'         => 'lo',
-            'lo_kind'               => 'transportir',
-            'po_number'             => $po->do_number,
-            'so_number'             => $so->do_number,
-            'origin_branch_id'      => $this->mainBranch->id,
+            'do_number' => "LOT2026-{$suffix}",
+            'document_type' => 'lo',
+            'lo_kind' => 'transportir',
+            'po_number' => $po->do_number,
+            'so_number' => $so->do_number,
+            'origin_branch_id' => $this->mainBranch->id,
             'destination_branch_id' => $this->branch->id,
-            'cylinder_type'         => '3kg',
-            'quantity_ordered'      => $delivered,
-            'order_date'            => '2026-08-11',
-            'requested_by'          => $this->pusat->id,
-            'status'                => 'approved',
+            'cylinder_type' => '3kg',
+            'quantity_ordered' => $delivered,
+            'order_date' => '2026-08-11',
+            'requested_by' => $this->pusat->id,
+            'status' => 'approved',
         ]);
 
         // Delivery is what triggers reconciliation.
@@ -232,16 +238,16 @@ class CylinderReconciliationTest extends TestCase
     public function an_lo_without_a_po_is_not_reconciled(): void
     {
         $lo = DeliveryOrder::create([
-            'do_number'             => 'LOT2026-404',
-            'document_type'         => 'lo',
-            'lo_kind'               => 'transportir',
-            'origin_branch_id'      => $this->mainBranch->id,
+            'do_number' => 'LOT2026-404',
+            'document_type' => 'lo',
+            'lo_kind' => 'transportir',
+            'origin_branch_id' => $this->mainBranch->id,
             'destination_branch_id' => $this->branch->id,
-            'cylinder_type'         => '3kg',
-            'quantity_ordered'      => 50,
-            'order_date'            => '2026-08-11',
-            'requested_by'          => $this->pusat->id,
-            'status'                => 'approved',
+            'cylinder_type' => '3kg',
+            'quantity_ordered' => 50,
+            'order_date' => '2026-08-11',
+            'requested_by' => $this->pusat->id,
+            'status' => 'approved',
         ]);
 
         $lo->update(['status' => 'delivered']);
@@ -254,17 +260,17 @@ class CylinderReconciliationTest extends TestCase
     public function an_undelivered_lo_is_not_reconciled(): void
     {
         $lo = DeliveryOrder::create([
-            'do_number'             => 'LOT2026-405',
-            'document_type'         => 'lo',
-            'lo_kind'               => 'transportir',
-            'po_number'             => 'PO2026-405',
-            'origin_branch_id'      => $this->mainBranch->id,
+            'do_number' => 'LOT2026-405',
+            'document_type' => 'lo',
+            'lo_kind' => 'transportir',
+            'po_number' => 'PO2026-405',
+            'origin_branch_id' => $this->mainBranch->id,
             'destination_branch_id' => $this->branch->id,
-            'cylinder_type'         => '3kg',
-            'quantity_ordered'      => 50,
-            'order_date'            => '2026-08-11',
-            'requested_by'          => $this->pusat->id,
-            'status'                => 'approved',
+            'cylinder_type' => '3kg',
+            'quantity_ordered' => 50,
+            'order_date' => '2026-08-11',
+            'requested_by' => $this->pusat->id,
+            'status' => 'approved',
         ]);
 
         $this->assertNull(app(CylinderReconciliationService::class)->reconcile($lo));

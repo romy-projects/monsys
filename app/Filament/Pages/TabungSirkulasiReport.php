@@ -103,40 +103,40 @@ class TabungSirkulasiReport extends Page
                 }
 
                 $entries[] = [
-                    'id'                => $record->id,
-                    'transaction_date'  => $record->transaction_date,
-                    'so_number'         => $record->so_number,
-                    'description'       => $record->description,
-                    'transaction_type'  => $record->transaction_type,
-                    'direction'         => $record->direction,
-                    'quantity'          => $qty,
-                    'balance'           => max(0, $balance),
-                    'branch_name'       => $record->branch?->name,
-                    'handled_by'        => $record->handled_by,
-                    'container_no'      => $record->container_no,
+                    'id' => $record->id,
+                    'transaction_date' => $record->transaction_date,
+                    'so_number' => $record->so_number,
+                    'description' => $record->description,
+                    'transaction_type' => $record->transaction_type,
+                    'direction' => $record->direction,
+                    'quantity' => $qty,
+                    'balance' => max(0, $balance),
+                    'branch_name' => $record->branch?->name,
+                    'handled_by' => $record->handled_by,
+                    'container_no' => $record->container_no,
                 ];
             }
 
             $runningBalances[$type] = max(0, $balance);
 
             $result[$type] = [
-                'entries'      => $entries,
-                'balance'      => max(0, $balance),
-                'debit_total'  => $debitTotal,
+                'entries' => $entries,
+                'balance' => max(0, $balance),
+                'debit_total' => $debitTotal,
                 'credit_total' => $creditTotal,
             ];
         }
 
         return [
-            'types'     => $selectedType ? [$selectedType] : $types,
-            'result'    => $result,
-            'totals'    => $runningBalances,
-            'count'     => $records->count(),
+            'types' => $selectedType ? [$selectedType] : $types,
+            'result' => $result,
+            'totals' => $runningBalances,
+            'count' => $records->count(),
         ];
     }
 
     public static function canAccess(): bool
     {
-        return auth()->user()?->isOwnerPusat() ?? false;
+        return auth()->user()?->hasPermission('reports.cylinder_circulation.view') ?? false;
     }
 }

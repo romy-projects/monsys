@@ -24,10 +24,10 @@ class Payable extends Model
     ];
 
     protected $casts = [
-        'amount'      => 'decimal:2',
+        'amount' => 'decimal:2',
         'paid_amount' => 'decimal:2',
-        'due_date'    => 'date',
-        'paid_at'     => 'datetime',
+        'due_date' => 'date',
+        'paid_at' => 'datetime',
     ];
 
     public function transportir(): BelongsTo
@@ -56,7 +56,7 @@ class Payable extends Model
 
         $fullyPaid = $this->balance <= 0;
 
-        $this->status  = $fullyPaid ? 'paid' : 'pending';
+        $this->status = $fullyPaid ? 'paid' : 'pending';
         $this->paid_at = $fullyPaid ? ($this->paid_at ?? now()) : null;
         $this->saveQuietly();
     }

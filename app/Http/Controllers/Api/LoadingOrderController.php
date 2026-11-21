@@ -17,22 +17,21 @@ class LoadingOrderController extends Controller
 {
     use ApiResponse;
 
-    public function __construct(private readonly DocumentNumberService $documentNumbers)
-    {
-    }
+    public function __construct(private readonly DocumentNumberService $documentNumbers) {}
 
     /**
      * List Loading Orders (LO) — Main Branch loading instructions to Transportir.
      */
     public function index(Request $request): JsonResponse
     {
-        $user  = $request->user();
-        $query = DeliveryOrder::loadingOrders()
-            ->with(['originBranch', 'destinationBranch', 'transportir', 'expedition', 'vehicle', 'loadedBy']);
-
-        if (! $user->isOwnerPusat() && ! $user->isRegionalLeader()) {
-            $query->where('origin_branch_id', $user->branch_id);
+        $user = $request->user();
+        if (! $user->hasPermission('loading_orders.view')) {
+            return $this->forbidden();
         }
+
+        $query = DeliveryOrder::loadingOrders()
+            ->accessibleTo($user)
+            ->with(['originBranch', 'destinationBranch', 'transportir', 'expedition', 'vehicle', 'loadedBy']);
 
         if ($request->filled('status')) {
             $query->where('status', $request->status);
@@ -77,34 +76,40 @@ class LoadingOrderController extends Controller
     {
         $user = $request->user();
 
-        if (! $user->isOwnerPusat() && ! $user->isRegionalLeader()) {
+        if (! $user->hasPermission('loading_orders.create')) {
             return $this->forbidden('Only Pusat/Regional can create Loading Orders.');
         }
 
         $mainBranch = Branch::mainBranch()->first();
+        if ($mainBranch === null || ! $user->canAccessBranch((int) $mainBranch->id)) {
+            return $this->forbidden();
+        }
 
         $data = $request->validate([
-            'lo_kind'            => ['nullable', 'in:transportir,expedition'],
-            'do_number'          => ['nullable', 'string', 'max:50', 'unique:delivery_orders,do_number'],
-            'order_date'         => ['required', 'date'],
-            'cylinder_type'      => ['required', 'in:3kg,5.5kg,12kg,50kg'],
-            'quantity_ordered'   => ['required', 'integer', 'min:1'],
+            'lo_kind' => ['nullable', 'in:transportir,expedition'],
+            'do_number' => ['nullable', 'string', 'max:50', 'unique:delivery_orders,do_number'],
+            'order_date' => ['required', 'date'],
+            'cylinder_type' => ['required', 'in:3kg,5.5kg,12kg,50kg'],
+            'quantity_ordered' => ['required', 'integer', 'min:1'],
             'destination_branch_id' => ['required', 'exists:branches,id'],
-            'so_number'          => ['nullable', 'string', 'max:100'],
-            'po_number'          => ['nullable', 'string', 'max:100'],
-            'counterparty_name'  => ['nullable', 'string', 'max:200'],
-            'transportir_id'     => ['nullable', 'exists:transportirs,id'],
-            'expedition_id'      => ['nullable', 'exists:expeditions,id'],
-            'vehicle_id'         => ['nullable', 'exists:vehicles,id'],
-            'transportir_name'   => ['nullable', 'string', 'max:200'],
-            'container_number'   => ['nullable', 'string', 'max:100'],
-            'loading_date'       => ['nullable', 'date'],
-            'eta'                => ['nullable', 'date'],
-            'notes'              => ['nullable', 'string'],
-            'expedition_notes'   => ['nullable', 'string', 'max:255'],
+            'so_number' => ['nullable', 'string', 'max:100'],
+            'po_number' => ['nullable', 'string', 'max:100'],
+            'counterparty_name' => ['nullable', 'string', 'max:200'],
+            'transportir_id' => ['nullable', 'exists:transportirs,id'],
+            'expedition_id' => ['nullable', 'exists:expeditions,id'],
+            'vehicle_id' => ['nullable', 'exists:vehicles,id'],
+            'transportir_name' => ['nullable', 'string', 'max:200'],
+            'container_number' => ['nullable', 'string', 'max:100'],
+            'loading_date' => ['nullable', 'date'],
+            'eta' => ['nullable', 'date'],
+            'notes' => ['nullable', 'string'],
+            'expedition_notes' => ['nullable', 'string', 'max:255'],
         ]);
 
         $kind = $data['lo_kind'] ?? 'transportir';
+        if (! $user->canAccessBranch((int) $data['destination_branch_id'])) {
+            return $this->forbidden();
+        }
 
         if ($kind === 'expedition') {
             // LO Expedisi: HQ arranges the expedition, so the container, the parent
@@ -113,36 +118,42 @@ class LoadingOrderController extends Controller
                 'transportir_lo_number' => ['required', 'string', 'max:100', Rule::exists('delivery_orders', 'do_number')
                     ->where('document_type', 'lo')
                     ->where('lo_kind', 'transportir')],
-                'expedition_id'         => ['required', 'exists:expeditions,id'],
-                'container_number'      => ['required', 'string', 'max:100'],
-                'expedition_cost'       => ['required', 'numeric', 'min:0'],
+                'expedition_id' => ['required', 'exists:expeditions,id'],
+                'container_number' => ['required', 'string', 'max:100'],
+                'expedition_cost' => ['required', 'numeric', 'min:0'],
             ]);
+            if (! DeliveryOrder::loadingOrders()
+                ->accessibleTo($user)
+                ->where('do_number', $data['transportir_lo_number'])
+                ->exists()) {
+                return $this->forbidden();
+            }
         } else {
             // LO Transportir: continues a PO. The transportir reports the
             // expedition/container later and bears its own cost (BALI-11/13).
             $data += $request->validate([
-                'po_number'      => ['required', 'string', 'max:100'],
+                'po_number' => ['required', 'string', 'max:100'],
                 'transportir_id' => ['required', 'exists:transportirs,id'],
             ]);
         }
 
-        $data['document_type']     = 'lo';
-        $data['lo_kind']           = $kind;
-        $data['origin_branch_id']  = $mainBranch?->id;
-        $data['requested_by']      = $user->id;
-        $data['status']            = 'draft';
+        $data['document_type'] = 'lo';
+        $data['lo_kind'] = $kind;
+        $data['origin_branch_id'] = $mainBranch?->id;
+        $data['requested_by'] = $user->id;
+        $data['status'] = 'draft';
 
         if ($kind === 'expedition') {
             $data['counterparty_type'] = 'branch';
             $data['counterparty_name'] = $data['counterparty_name']
                 ?? Branch::find($data['destination_branch_id'])?->name;
-            $data['cost_borne_by']     = 'sum';
+            $data['cost_borne_by'] = 'sum';
         } else {
-            $data['counterparty_type']     = 'pertamina';
-            $data['counterparty_name']     = $data['counterparty_name'] ?? 'Pertamina';
+            $data['counterparty_type'] = 'pertamina';
+            $data['counterparty_name'] = $data['counterparty_name'] ?? 'Pertamina';
             // The transportir pays for its own expedition: no fee reaches HQ (BALI-13).
-            $data['cost_borne_by']         = 'transporter';
-            $data['expedition_cost']       = null;
+            $data['cost_borne_by'] = 'transporter';
+            $data['expedition_cost'] = null;
             $data['transportir_lo_number'] = null;
         }
 
@@ -167,6 +178,9 @@ class LoadingOrderController extends Controller
     {
         $user = $request->user();
 
+        if (! $this->canManage($user, $deliveryOrder, 'loading_orders.update')) {
+            return $this->forbidden();
+        }
         if ($deliveryOrder->document_type !== 'lo') {
             return $this->error('Not a Loading Order.', 422);
         }
@@ -175,24 +189,28 @@ class LoadingOrderController extends Controller
         }
 
         $data = $request->validate([
-            'cylinder_type'     => ['sometimes', 'in:3kg,5.5kg,12kg,50kg'],
-            'quantity_ordered'  => ['sometimes', 'integer', 'min:1'],
+            'cylinder_type' => ['sometimes', 'in:3kg,5.5kg,12kg,50kg'],
+            'quantity_ordered' => ['sometimes', 'integer', 'min:1'],
             'destination_branch_id' => ['sometimes', 'exists:branches,id'],
-            'so_number'         => ['nullable', 'string', 'max:100'],
-            'po_number'         => ['sometimes', 'nullable', 'string', 'max:100'],
+            'so_number' => ['nullable', 'string', 'max:100'],
+            'po_number' => ['sometimes', 'nullable', 'string', 'max:100'],
             'transportir_lo_number' => ['sometimes', 'nullable', 'string', 'max:100'],
             'counterparty_name' => ['nullable', 'string', 'max:200'],
-            'transportir_id'    => ['nullable', 'exists:transportirs,id'],
-            'expedition_id'     => ['nullable', 'exists:expeditions,id'],
-            'vehicle_id'        => ['nullable', 'exists:vehicles,id'],
-            'transportir_name'  => ['nullable', 'string', 'max:200'],
-            'container_number'  => ['nullable', 'string', 'max:100'],
-            'expedition_cost'   => ['sometimes', 'nullable', 'numeric', 'min:0'],
-            'expedition_notes'  => ['sometimes', 'nullable', 'string', 'max:255'],
-            'loading_date'      => ['nullable', 'date'],
-            'eta'               => ['nullable', 'date'],
-            'notes'             => ['nullable', 'string'],
+            'transportir_id' => ['nullable', 'exists:transportirs,id'],
+            'expedition_id' => ['nullable', 'exists:expeditions,id'],
+            'vehicle_id' => ['nullable', 'exists:vehicles,id'],
+            'transportir_name' => ['nullable', 'string', 'max:200'],
+            'container_number' => ['nullable', 'string', 'max:100'],
+            'expedition_cost' => ['sometimes', 'nullable', 'numeric', 'min:0'],
+            'expedition_notes' => ['sometimes', 'nullable', 'string', 'max:255'],
+            'loading_date' => ['nullable', 'date'],
+            'eta' => ['nullable', 'date'],
+            'notes' => ['nullable', 'string'],
         ]);
+        if (isset($data['destination_branch_id'])
+            && ! $user->canAccessBranch((int) $data['destination_branch_id'])) {
+            return $this->forbidden();
+        }
 
         if ($deliveryOrder->isExpeditionLoadingOrder()) {
             if (array_key_exists('container_number', $data) && blank($data['container_number'])) {
@@ -203,8 +221,8 @@ class LoadingOrderController extends Controller
             $data['cost_borne_by'] = 'sum';
         } else {
             // A Transportir LO never carries a delivery fee (BALI-13).
-            $data['cost_borne_by']         = 'transporter';
-            $data['expedition_cost']       = null;
+            $data['cost_borne_by'] = 'transporter';
+            $data['expedition_cost'] = null;
             $data['transportir_lo_number'] = null;
         }
 
@@ -218,6 +236,9 @@ class LoadingOrderController extends Controller
      */
     public function submit(DeliveryOrder $deliveryOrder, Request $request): JsonResponse
     {
+        if (! $this->canManage($request->user(), $deliveryOrder, 'loading_orders.submit')) {
+            return $this->forbidden();
+        }
         if ($deliveryOrder->document_type !== 'lo') {
             return $this->error('Not a Loading Order.', 422);
         }
@@ -246,7 +267,7 @@ class LoadingOrderController extends Controller
     {
         $user = $request->user();
 
-        if (! $user->canApproveOrders()) {
+        if (! $this->canManage($user, $deliveryOrder, 'loading_orders.approve')) {
             return $this->forbidden();
         }
         if ($deliveryOrder->document_type !== 'lo') {
@@ -257,7 +278,7 @@ class LoadingOrderController extends Controller
         }
 
         $deliveryOrder->update([
-            'status'      => 'approved',
+            'status' => 'approved',
             'approved_by' => $user->id,
             'approved_at' => now(),
         ]);
@@ -272,7 +293,7 @@ class LoadingOrderController extends Controller
     {
         $user = $request->user();
 
-        if (! $user->canApproveOrders()) {
+        if (! $this->canManage($user, $deliveryOrder, 'loading_orders.mark_loaded')) {
             return $this->forbidden();
         }
         if ($deliveryOrder->document_type !== 'lo') {
@@ -287,9 +308,9 @@ class LoadingOrderController extends Controller
         ]);
 
         $deliveryOrder->update([
-            'status'       => 'in_transit',
+            'status' => 'in_transit',
             'loading_date' => $data['loading_date'],
-            'loaded_by'    => $user->id,
+            'loaded_by' => $user->id,
         ]);
 
         return $this->success(new DeliveryOrderResource($deliveryOrder->fresh()), 'Marked as loaded & in transit.');
@@ -302,7 +323,7 @@ class LoadingOrderController extends Controller
     {
         $user = $request->user();
 
-        if (! $user->canApproveOrders()) {
+        if (! $this->canManage($user, $deliveryOrder, 'loading_orders.cancel')) {
             return $this->forbidden();
         }
         if ($deliveryOrder->document_type !== 'lo') {
@@ -324,7 +345,7 @@ class LoadingOrderController extends Controller
     {
         $user = $request->user();
 
-        if (! $user->isOwnerPusat() && ! $user->isRegionalLeader()) {
+        if (! $this->canManage($user, $deliveryOrder, 'loading_orders.delete')) {
             return $this->forbidden();
         }
         if ($deliveryOrder->document_type !== 'lo') {
@@ -341,8 +362,13 @@ class LoadingOrderController extends Controller
 
     private function authorizeView($user, DeliveryOrder $do): void
     {
-        if ($user->isOwnerPusat() || $user->isRegionalLeader()) return;
-        if ($do->origin_branch_id === $user->branch_id) return;
-        abort(403);
+        abort_unless($this->canManage($user, $do, 'loading_orders.view'), 403);
+    }
+
+    private function canManage($user, DeliveryOrder $order, string $permission): bool
+    {
+        return $order->document_type === 'lo'
+            && $user->hasPermission($permission)
+            && $user->canAccessModelRecord($order, $permission === 'loading_orders.view' ? 'view' : 'update');
     }
 }

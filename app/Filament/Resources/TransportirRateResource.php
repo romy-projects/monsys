@@ -11,6 +11,7 @@ use Filament\Forms\Get;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Illuminate\Support\Carbon;
 
 /**
  * Transportir haulage rates per cylinder type (BALI-10).
@@ -59,10 +60,10 @@ class TransportirRateResource extends Resource
                     Forms\Components\Select::make('cylinder_type')
                         ->label('Cylinder Type / Jenis Tabung')
                         ->options([
-                            '3kg'   => '3 kg',
+                            '3kg' => '3 kg',
                             '5.5kg' => '5.5 kg',
-                            '12kg'  => '12 kg',
-                            '50kg'  => '50 kg',
+                            '12kg' => '12 kg',
+                            '50kg' => '50 kg',
                         ])
                         ->required()
                         ->columnSpan(1),
@@ -83,7 +84,7 @@ class TransportirRateResource extends Resource
                         // Compared with whereDate() because the column is stored as a
                         // datetime; Rule::unique() would miss it (value vs. 'Y-m-d 00:00:00').
                         ->rule(fn (Get $get, $record) => function (string $attribute, $value, \Closure $fail) use ($get, $record): void {
-                            $date = $value ? \Illuminate\Support\Carbon::parse($value)->toDateString() : null;
+                            $date = $value ? Carbon::parse($value)->toDateString() : null;
 
                             if (! $date || ! $get('transportir_id') || ! $get('cylinder_type')) {
                                 return;
@@ -125,7 +126,7 @@ class TransportirRateResource extends Resource
 
                 Tables\Columns\TextColumn::make('rate')
                     ->label('Rate / Tabung')
-                    ->formatStateUsing(fn ($state) => 'Rp ' . number_format((float) $state, 0, ',', '.'))
+                    ->formatStateUsing(fn ($state) => 'Rp '.number_format((float) $state, 0, ',', '.'))
                     ->alignEnd()
                     ->sortable(),
 
@@ -148,10 +149,10 @@ class TransportirRateResource extends Resource
                 Tables\Filters\SelectFilter::make('cylinder_type')
                     ->label('Cylinder Type')
                     ->options([
-                        '3kg'   => '3 kg',
+                        '3kg' => '3 kg',
                         '5.5kg' => '5.5 kg',
-                        '12kg'  => '12 kg',
-                        '50kg'  => '50 kg',
+                        '12kg' => '12 kg',
+                        '50kg' => '50 kg',
                     ]),
             ])
             ->actions([
@@ -174,14 +175,14 @@ class TransportirRateResource extends Resource
     public static function getPages(): array
     {
         return [
-            'index'  => Pages\ListTransportirRates::route('/'),
+            'index' => Pages\ListTransportirRates::route('/'),
             'create' => Pages\CreateTransportirRate::route('/create'),
-            'edit'   => Pages\EditTransportirRate::route('/{record}/edit'),
+            'edit' => Pages\EditTransportirRate::route('/{record}/edit'),
         ];
     }
 
     public static function canAccess(): bool
     {
-        return in_array(auth()->user()?->role, ['owner_pusat', 'regional_leader']);
+        return static::can('viewAny');
     }
 }

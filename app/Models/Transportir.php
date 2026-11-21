@@ -39,4 +39,3 @@ class Transportir extends Model
         return $this->hasMany(Payable::class);
     }
 }
-

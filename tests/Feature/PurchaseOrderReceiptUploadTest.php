@@ -22,10 +22,15 @@ class PurchaseOrderReceiptUploadTest extends TestCase
     use RefreshDatabase;
 
     private Branch $hqBranch;
+
     private Branch $branch;
+
     private Branch $otherBranch;
+
     private User $pusat;
+
     private User $branchUser;
+
     private User $otherUser;
 
     protected function setUp(): void
@@ -59,17 +64,17 @@ class PurchaseOrderReceiptUploadTest extends TestCase
     private function makePo(string $status = 'in_transit'): DeliveryOrder
     {
         return DeliveryOrder::create([
-            'do_number'             => 'PO2026-901',
-            'document_type'         => 'po',
-            'counterparty_type'     => 'branch',
-            'counterparty_name'     => $this->hqBranch->name,
-            'origin_branch_id'      => $this->hqBranch->id,
+            'do_number' => 'PO2026-901',
+            'document_type' => 'po',
+            'counterparty_type' => 'branch',
+            'counterparty_name' => $this->hqBranch->name,
+            'origin_branch_id' => $this->hqBranch->id,
             'destination_branch_id' => $this->branch->id,
-            'cylinder_type'         => '12kg',
-            'quantity_ordered'      => 50,
-            'order_date'            => '2026-11-20',
-            'requested_by'          => $this->branchUser->id,
-            'status'                => $status,
+            'cylinder_type' => '12kg',
+            'quantity_ordered' => 50,
+            'order_date' => '2026-11-20',
+            'requested_by' => $this->branchUser->id,
+            'status' => $status,
         ]);
     }
 
@@ -171,17 +176,17 @@ class PurchaseOrderReceiptUploadTest extends TestCase
         Storage::fake('public');
 
         $lo = DeliveryOrder::create([
-            'do_number'             => 'LOT2026-901',
-            'document_type'         => 'lo',
-            'lo_kind'               => 'transportir',
-            'po_number'             => 'PO2026-901',
-            'origin_branch_id'      => $this->hqBranch->id,
+            'do_number' => 'LOT2026-901',
+            'document_type' => 'lo',
+            'lo_kind' => 'transportir',
+            'po_number' => 'PO2026-901',
+            'origin_branch_id' => $this->hqBranch->id,
             'destination_branch_id' => $this->branch->id,
-            'cylinder_type'         => '12kg',
-            'quantity_ordered'      => 10,
-            'order_date'            => '2026-11-20',
-            'requested_by'          => $this->pusat->id,
-            'status'                => 'delivered',
+            'cylinder_type' => '12kg',
+            'quantity_ordered' => 10,
+            'order_date' => '2026-11-20',
+            'requested_by' => $this->pusat->id,
+            'status' => 'delivered',
         ]);
 
         $this->upload($lo, $this->pusat)->assertStatus(422);

@@ -23,12 +23,19 @@ class ReconciliationNotificationTest extends TestCase
     use RefreshDatabase;
 
     private User $pusat;
+
     private User $regional;
+
     private User $branchOwner;
+
     private User $branchStaff;
+
     private User $otherBranchOwner;
+
     private Branch $mainBranch;
+
     private Branch $branch;
+
     private Branch $otherBranch;
 
     protected function setUp(): void
@@ -71,57 +78,57 @@ class ReconciliationNotificationTest extends TestCase
     private function deliverChain(int $paid, int $redeemed, int $delivered, string $suffix): array
     {
         $po = DeliveryOrder::create([
-            'do_number'             => "PO2026-{$suffix}",
-            'document_type'         => 'po',
-            'counterparty_type'     => 'branch',
-            'counterparty_name'     => 'SUM Pusat',
-            'origin_branch_id'      => $this->mainBranch->id,
+            'do_number' => "PO2026-{$suffix}",
+            'document_type' => 'po',
+            'counterparty_type' => 'branch',
+            'counterparty_name' => 'SUM Pusat',
+            'origin_branch_id' => $this->mainBranch->id,
             'destination_branch_id' => $this->branch->id,
-            'cylinder_type'         => '3kg',
-            'quantity_ordered'      => $paid,
-            'order_date'            => '2026-08-10',
-            'requested_by'          => $this->branchOwner->id,
-            'status'                => 'approved',
+            'cylinder_type' => '3kg',
+            'quantity_ordered' => $paid,
+            'order_date' => '2026-08-10',
+            'requested_by' => $this->branchOwner->id,
+            'status' => 'approved',
         ]);
 
         $so = DeliveryOrder::create([
-            'do_number'             => "SO2026-{$suffix}",
-            'document_type'         => 'so',
-            'counterparty_type'     => 'pertamina',
-            'counterparty_name'     => 'Pertamina',
-            'po_number'             => $po->do_number,
-            'origin_branch_id'      => $this->mainBranch->id,
+            'do_number' => "SO2026-{$suffix}",
+            'document_type' => 'so',
+            'counterparty_type' => 'pertamina',
+            'counterparty_name' => 'Pertamina',
+            'po_number' => $po->do_number,
+            'origin_branch_id' => $this->mainBranch->id,
             'destination_branch_id' => $this->branch->id,
-            'cylinder_type'         => '3kg',
-            'quantity_ordered'      => $redeemed,
-            'order_date'            => '2026-08-10',
-            'requested_by'          => $this->pusat->id,
-            'status'                => 'approved',
+            'cylinder_type' => '3kg',
+            'quantity_ordered' => $redeemed,
+            'order_date' => '2026-08-10',
+            'requested_by' => $this->pusat->id,
+            'status' => 'approved',
         ]);
 
         LpgPrice::create([
-            'branch_id'         => $this->branch->id,
+            'branch_id' => $this->branch->id,
             'purchase_order_id' => $po->id,
-            'cylinder_type'     => '3kg',
-            'purchase_price'    => 10000,
-            'selling_price'     => 13000,
-            'effective_date'    => '2026-08-01',
-            'created_by'        => $this->pusat->id,
+            'cylinder_type' => '3kg',
+            'purchase_price' => 10000,
+            'selling_price' => 13000,
+            'effective_date' => '2026-08-01',
+            'created_by' => $this->pusat->id,
         ]);
 
         $lo = DeliveryOrder::create([
-            'do_number'             => "LOT2026-{$suffix}",
-            'document_type'         => 'lo',
-            'lo_kind'               => 'transportir',
-            'po_number'             => $po->do_number,
-            'so_number'             => $so->do_number,
-            'origin_branch_id'      => $this->mainBranch->id,
+            'do_number' => "LOT2026-{$suffix}",
+            'document_type' => 'lo',
+            'lo_kind' => 'transportir',
+            'po_number' => $po->do_number,
+            'so_number' => $so->do_number,
+            'origin_branch_id' => $this->mainBranch->id,
             'destination_branch_id' => $this->branch->id,
-            'cylinder_type'         => '3kg',
-            'quantity_ordered'      => $delivered,
-            'order_date'            => '2026-08-11',
-            'requested_by'          => $this->pusat->id,
-            'status'                => 'approved',
+            'cylinder_type' => '3kg',
+            'quantity_ordered' => $delivered,
+            'order_date' => '2026-08-11',
+            'requested_by' => $this->pusat->id,
+            'status' => 'approved',
         ]);
 
         $lo->update(['status' => 'delivered']);
@@ -204,5 +211,3 @@ class ReconciliationNotificationTest extends TestCase
         $this->assertStringContainsString('20 unit unredeemed', json_decode($rows->first()->data, true)['body']);
     }
 }
-
-

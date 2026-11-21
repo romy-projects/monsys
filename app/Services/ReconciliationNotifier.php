@@ -49,13 +49,19 @@ class ReconciliationNotifier
     public function recipients(CylinderReconciliation $reconciliation): Collection
     {
         $hq = User::query()
-            ->where('role', 'owner_pusat')
+            ->whereHas(
+                'accessRole.permissions',
+                fn ($query) => $query->where('permissions.key', 'system.business_admin')
+            )
             ->where('status', 'active')
             ->get();
 
         $branch = User::query()
             ->where('branch_id', $reconciliation->branch_id)
-            ->whereIn('role', ['owner_cabang', 'staff_gudang'])
+            ->whereHas('accessRole.permissions', fn ($query) => $query->whereIn(
+                'permissions.key',
+                ['system.branch_owner', 'system.warehouse_staff']
+            ))
             ->where('status', 'active')
             ->get();
 
@@ -67,13 +73,13 @@ class ReconciliationNotifier
     {
         $detail = collect([
             (int) $reconciliation->quantity_unredeemed > 0
-                ? $reconciliation->quantity_unredeemed . ' unit unredeemed'
+                ? $reconciliation->quantity_unredeemed.' unit unredeemed'
                 : null,
             (int) $reconciliation->quantity_short_delivered > 0
-                ? $reconciliation->quantity_short_delivered . ' unit short delivery'
+                ? $reconciliation->quantity_short_delivered.' unit short delivery'
                 : null,
             (int) $reconciliation->quantity_over_delivered > 0
-                ? $reconciliation->quantity_over_delivered . ' unit over delivery'
+                ? $reconciliation->quantity_over_delivered.' unit over delivery'
                 : null,
         ])->filter()->implode(', ');
 
@@ -87,7 +93,7 @@ class ReconciliationNotifier
             : "PO #{$po} → LO #{$lo}";
 
         return "{$chain} ({$reconciliation->cylinder_type}) at {$branch}: {$detail}. "
-            . 'Open value: Rp ' . number_format($reconciliation->openSettlementAmount(), 0, ',', '.') . '. '
-            . 'Settle through the next Invoice/SO/LOT/LOE.';
+            .'Open value: Rp '.number_format($reconciliation->openSettlementAmount(), 0, ',', '.').'. '
+            .'Settle through the next Invoice/SO/LOT/LOE.';
     }
 }

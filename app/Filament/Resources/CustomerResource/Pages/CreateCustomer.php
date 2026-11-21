@@ -13,9 +13,7 @@ class CreateCustomer extends CreateRecord
     {
         $user = auth()->user();
 
-        if (! $user->isOwnerPusat() && ! $user->isRegionalLeader()) {
-            $data['branch_id'] = $user->branch_id;
-        }
+        abort_unless($user->canAccessBranch((int) ($data['branch_id'] ?? 0)), 403);
 
         return $data;
     }

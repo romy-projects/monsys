@@ -6,10 +6,12 @@ use App\Filament\Resources\ExpeditionLoadingOrderResource\Pages\CreateExpedition
 use App\Filament\Resources\ExpeditionLoadingOrderResource\Pages\ListExpeditionLoadingOrders;
 use App\Filament\Resources\LoadingOrderResource\Pages\CreateLoadingOrder;
 use App\Filament\Resources\LoadingOrderResource\Pages\ListLoadingOrders;
+use App\Filament\Resources\PurchaseOrderResource\Pages\CreatePurchaseOrder;
 use App\Filament\Resources\TransportirRateResource\Pages\CreateTransportirRate;
 use App\Filament\Resources\TransportirRateResource\Pages\ListTransportirRates;
-use App\Filament\Resources\PurchaseOrderResource\Pages\CreatePurchaseOrder;
 use App\Models\Branch;
+use App\Models\Transportir;
+use App\Models\TransportirRate;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
@@ -31,19 +33,19 @@ class LoadingOrderResourcesSmokeTest extends TestCase
         parent::setUp();
 
         $mainBranch = Branch::create([
-            'code'   => 'PST',
-            'name'   => 'SUM Pusat',
-            'city'   => 'Jakarta',
+            'code' => 'PST',
+            'name' => 'SUM Pusat',
+            'city' => 'Jakarta',
             'status' => 'active',
         ]);
 
         $this->pusat = User::create([
-            'name'      => 'Pusat User',
-            'email'     => 'pusat@test.com',
-            'password'  => bcrypt('password'),
-            'role'      => 'owner_pusat',
+            'name' => 'Pusat User',
+            'email' => 'pusat@test.com',
+            'password' => bcrypt('password'),
+            'role' => 'owner_pusat',
             'branch_id' => $mainBranch->id,
-            'status'    => 'active',
+            'status' => 'active',
         ]);
 
         $this->actingAs($this->pusat);
@@ -78,9 +80,9 @@ class LoadingOrderResourcesSmokeTest extends TestCase
     #[Test]
     public function purchase_order_form_renders_the_transportir_rate_section(): void
     {
-        $transportir = \App\Models\Transportir::create([
-            'name'   => 'PT Raja Sumber Cahaya',
-            'code'   => 'TRP-01',
+        $transportir = Transportir::create([
+            'name' => 'PT Raja Sumber Cahaya',
+            'code' => 'TRP-01',
             'status' => 'active',
         ]);
 
@@ -88,8 +90,8 @@ class LoadingOrderResourcesSmokeTest extends TestCase
         Livewire::test(CreatePurchaseOrder::class)
             ->assertOk()
             ->fillForm([
-                'transportir_id'   => $transportir->id,
-                'cylinder_type'    => '12kg',
+                'transportir_id' => $transportir->id,
+                'cylinder_type' => '12kg',
                 'quantity_ordered' => 10,
             ])
             ->assertSee('Transporter Rate & Cost')
@@ -113,16 +115,16 @@ class LoadingOrderResourcesSmokeTest extends TestCase
     #[Test]
     public function a_rate_can_be_created_once_per_transportir_type_and_date(): void
     {
-        $transportir = \App\Models\Transportir::create([
-            'name'   => 'PT Mahardika',
-            'code'   => 'TRP-02',
+        $transportir = Transportir::create([
+            'name' => 'PT Mahardika',
+            'code' => 'TRP-02',
             'status' => 'active',
         ]);
 
         $payload = [
             'transportir_id' => $transportir->id,
-            'cylinder_type'  => '12kg',
-            'rate'           => 5000,
+            'cylinder_type' => '12kg',
+            'rate' => 5000,
             'effective_date' => today()->toDateString(),
         ];
 
@@ -133,7 +135,7 @@ class LoadingOrderResourcesSmokeTest extends TestCase
 
         $this->assertDatabaseHas('transportir_rates', [
             'transportir_id' => $transportir->id,
-            'cylinder_type'  => '12kg',
+            'cylinder_type' => '12kg',
         ]);
 
         Livewire::test(CreateTransportirRate::class)
@@ -141,6 +143,6 @@ class LoadingOrderResourcesSmokeTest extends TestCase
             ->call('create')
             ->assertHasFormErrors(['effective_date']);
 
-        $this->assertSame(1, \App\Models\TransportirRate::count());
+        $this->assertSame(1, TransportirRate::count());
     }
 }

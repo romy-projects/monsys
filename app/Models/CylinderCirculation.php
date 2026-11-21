@@ -2,13 +2,14 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\ScopesToAccessibleBranches;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class CylinderCirculation extends Model
 {
-    use HasFactory;
+    use HasFactory, ScopesToAccessibleBranches;
 
     protected $fillable = [
         'branch_id',
@@ -28,7 +29,7 @@ class CylinderCirculation extends Model
 
     protected $casts = [
         'transaction_date' => 'date',
-        'quantity'         => 'integer',
+        'quantity' => 'integer',
     ];
 
     /** Auto-set direction + description on create. */
@@ -38,20 +39,20 @@ class CylinderCirculation extends Model
             // Auto-set direction based on transaction_type.
             if (is_null($circulation->direction)) {
                 $circulation->direction = match ($circulation->transaction_type) {
-                    'kirim'           => 'debit',
-                    'bongkar_kosong'  => 'kredit',
-                    'pembelian'       => 'debit',
-                    'penyesuaian'     => 'debit', // default debit; user can override
+                    'kirim' => 'debit',
+                    'bongkar_kosong' => 'kredit',
+                    'pembelian' => 'debit',
+                    'penyesuaian' => 'debit', // default debit; user can override
                 };
             }
 
             // Auto-fill description if empty.
             if (blank($circulation->description)) {
                 $typeLabel = match ($circulation->transaction_type) {
-                    'kirim'          => 'Pengiriman tabung',
+                    'kirim' => 'Pengiriman tabung',
                     'bongkar_kosong' => 'Bongkaran kosong',
-                    'pembelian'      => 'Pembelian tabung baru',
-                    'penyesuaian'    => 'Penyesuaian stok',
+                    'pembelian' => 'Pembelian tabung baru',
+                    'penyesuaian' => 'Penyesuaian stok',
                 };
                 $circulation->description = "{$typeLabel} {$circulation->cylinder_type} — {$circulation->quantity} pcs";
             }

@@ -12,17 +12,17 @@ trait ApiResponse
         return response()->json(['data' => $data, 'message' => $message], $status);
     }
 
-    protected function paginated(LengthAwarePaginator $paginator, callable $transform = null): JsonResponse
+    protected function paginated(LengthAwarePaginator $paginator, ?callable $transform = null): JsonResponse
     {
         $items = $transform ? $paginator->getCollection()->map($transform) : $paginator->getCollection();
 
         return response()->json([
             'data' => $items,
             'meta' => [
-                'total'        => $paginator->total(),
-                'per_page'     => $paginator->perPage(),
+                'total' => $paginator->total(),
+                'per_page' => $paginator->perPage(),
                 'current_page' => $paginator->currentPage(),
-                'last_page'    => $paginator->lastPage(),
+                'last_page' => $paginator->lastPage(),
             ],
             'message' => 'OK',
         ]);
@@ -44,6 +44,7 @@ trait ApiResponse
         if ($errors) {
             $body['errors'] = $errors;
         }
+
         return response()->json($body, $status);
     }
 

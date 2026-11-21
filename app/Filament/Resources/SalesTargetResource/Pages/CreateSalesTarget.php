@@ -11,6 +11,8 @@ class CreateSalesTarget extends CreateRecord
 
     protected function mutateFormDataBeforeCreate(array $data): array
     {
+        abort_unless(auth()->user()->canAccessBranch((int) ($data['branch_id'] ?? 0)), 403);
+
         $data['created_by'] = auth()->id();
 
         return $data;

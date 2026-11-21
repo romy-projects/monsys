@@ -43,9 +43,9 @@ class ReconciliationSettlementsRelationManager extends RelationManager
                 Tables\Columns\TextColumn::make('party')
                     ->badge()
                     ->color(fn (string $state): string => match ($state) {
-                        ReconciliationSettlement::PARTY_HQ     => 'info',
+                        ReconciliationSettlement::PARTY_HQ => 'info',
                         ReconciliationSettlement::PARTY_BRANCH => 'warning',
-                        default                                => 'gray',
+                        default => 'gray',
                     }),
 
                 Tables\Columns\TextColumn::make('quantity')
@@ -72,8 +72,8 @@ class ReconciliationSettlementsRelationManager extends RelationManager
                     ->formatStateUsing(fn (string $state): string => ReconciliationSettlement::statuses()[$state] ?? $state)
                     ->color(fn (string $state): string => match ($state) {
                         ReconciliationSettlement::STATUS_SETTLED => 'success',
-                        ReconciliationSettlement::STATUS_VOID    => 'danger',
-                        default                                  => 'warning',
+                        ReconciliationSettlement::STATUS_VOID => 'danger',
+                        default => 'warning',
                     }),
 
                 Tables\Columns\TextColumn::make('settled_document_label')
@@ -97,8 +97,8 @@ class ReconciliationSettlementsRelationManager extends RelationManager
                 Tables\Filters\SelectFilter::make('party')
                     ->label('Party')
                     ->options([
-                        ReconciliationSettlement::PARTY_HQ          => 'HQ',
-                        ReconciliationSettlement::PARTY_BRANCH      => 'Branch',
+                        ReconciliationSettlement::PARTY_HQ => 'HQ',
+                        ReconciliationSettlement::PARTY_BRANCH => 'Branch',
                         ReconciliationSettlement::PARTY_TRANSPORTIR => 'Transportir',
                     ]),
             ])
@@ -107,7 +107,11 @@ class ReconciliationSettlementsRelationManager extends RelationManager
                     ->label('Settle')
                     ->icon('heroicon-o-check-circle')
                     ->color('success')
-                    ->visible(fn (ReconciliationSettlement $record): bool => $record->isOpen())
+                    ->visible(fn (ReconciliationSettlement $record): bool => auth()->user()?->hasPermission('reconciliations.settle') && $record->isOpen()
+                    )
+                    ->authorize(fn (ReconciliationSettlement $record): bool => auth()->user()?->hasPermission('reconciliations.settle') &&
+                        auth()->user()?->canAccessBranch((int) $this->getOwnerRecord()->branch_id)
+                    )
                     ->form([
                         Forms\Components\Select::make('settled_by_type')
                             ->label('Settled by document')
@@ -155,7 +159,12 @@ class ReconciliationSettlementsRelationManager extends RelationManager
                     ->label('Void')
                     ->icon('heroicon-o-x-circle')
                     ->color('danger')
-                    ->visible(fn (ReconciliationSettlement $record): bool => $record->status !== ReconciliationSettlement::STATUS_VOID)
+                    ->visible(fn (ReconciliationSettlement $record): bool => auth()->user()?->hasPermission('reconciliations.void') &&
+                        $record->status !== ReconciliationSettlement::STATUS_VOID
+                    )
+                    ->authorize(fn (ReconciliationSettlement $record): bool => auth()->user()?->hasPermission('reconciliations.void') &&
+                        auth()->user()?->canAccessBranch((int) $this->getOwnerRecord()->branch_id)
+                    )
                     ->requiresConfirmation()
                     ->form([
                         Forms\Components\Textarea::make('reason')
@@ -213,6 +222,7 @@ class ReconciliationSettlementsRelationManager extends RelationManager
             default => [],
         };
     }
+
     /**
      * T13-05: number lookup for the Settle dialog. Filament's plain `searchable()`
      * on a select only filters the loaded options; this queries the table instead so
@@ -272,12 +282,10 @@ class ReconciliationSettlementsRelationManager extends RelationManager
         }
 
         return match ($type) {
-            ReconciliationSettlement::DOCUMENT_INVOICE       => Invoice::query()->whereKey($id)->value('invoice_number'),
-            ReconciliationSettlement::DOCUMENT_SALES_ORDER   => DeliveryOrder::salesOrders()->whereKey($id)->value('do_number'),
+            ReconciliationSettlement::DOCUMENT_INVOICE => Invoice::query()->whereKey($id)->value('invoice_number'),
+            ReconciliationSettlement::DOCUMENT_SALES_ORDER => DeliveryOrder::salesOrders()->whereKey($id)->value('do_number'),
             ReconciliationSettlement::DOCUMENT_LOADING_ORDER => DeliveryOrder::loadingOrders()->whereKey($id)->value('do_number'),
-            default                                          => null,
+            default => null,
         };
     }
-
-
 }

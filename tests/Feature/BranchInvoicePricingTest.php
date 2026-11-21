@@ -22,9 +22,13 @@ class BranchInvoicePricingTest extends TestCase
     use RefreshDatabase;
 
     private Branch $mainBranch;
+
     private Branch $branch;
+
     private User $pusat;
+
     private Transportir $transportir;
+
     private DeliveryOrder $loe;
 
     protected function setUp(): void
@@ -32,77 +36,77 @@ class BranchInvoicePricingTest extends TestCase
         parent::setUp();
 
         $this->mainBranch = Branch::create([
-            'code'   => 'PST',
-            'name'   => 'SUM Pusat',
-            'city'   => 'Jakarta',
+            'code' => 'PST',
+            'name' => 'SUM Pusat',
+            'city' => 'Jakarta',
             'status' => 'active',
         ]);
 
         $this->branch = Branch::create([
-            'code'   => 'BDG',
-            'name'   => 'SUM Bandung',
-            'city'   => 'Bandung',
+            'code' => 'BDG',
+            'name' => 'SUM Bandung',
+            'city' => 'Bandung',
             'status' => 'active',
         ]);
 
         $this->pusat = User::create([
-            'name'      => 'Pusat User',
-            'email'     => 'pusat@test.com',
-            'password'  => bcrypt('password'),
-            'role'      => 'owner_pusat',
+            'name' => 'Pusat User',
+            'email' => 'pusat@test.com',
+            'password' => bcrypt('password'),
+            'role' => 'owner_pusat',
             'branch_id' => $this->mainBranch->id,
-            'status'    => 'active',
+            'status' => 'active',
         ]);
 
         $this->transportir = Transportir::create([
-            'name'   => 'PT Raja Sumber Cahaya',
-            'code'   => 'TRP-01',
+            'name' => 'PT Raja Sumber Cahaya',
+            'code' => 'TRP-01',
             'status' => 'active',
         ]);
 
         LpgPrice::create([
-            'branch_id'      => $this->branch->id,
-            'cylinder_type'  => '12kg',
+            'branch_id' => $this->branch->id,
+            'cylinder_type' => '12kg',
             'purchase_price' => 20000,
-            'selling_price'  => 30000,
+            'selling_price' => 30000,
             'effective_date' => today()->toDateString(),
-            'created_by'     => $this->pusat->id,
+            'created_by' => $this->pusat->id,
         ]);
 
         TransportirRate::create([
             'transportir_id' => $this->transportir->id,
-            'cylinder_type'  => '12kg',
-            'rate'           => 5000,
+            'cylinder_type' => '12kg',
+            'rate' => 5000,
             'effective_date' => today()->toDateString(),
-            'created_by'     => $this->pusat->id,
+            'created_by' => $this->pusat->id,
         ]);
 
         $this->loe = DeliveryOrder::create([
-            'do_number'             => 'LOE2026-001',
-            'document_type'         => 'lo',
-            'lo_kind'               => 'expedition',
-            'origin_branch_id'      => $this->mainBranch->id,
+            'do_number' => 'LOE2026-001',
+            'document_type' => 'lo',
+            'lo_kind' => 'expedition',
+            'origin_branch_id' => $this->mainBranch->id,
             'destination_branch_id' => $this->branch->id,
-            'transportir_id'        => $this->transportir->id,
-            'cost_borne_by'         => 'sum',
-            'expedition_cost'       => 5000,
-            'container_number'      => 'CONT-2026-001',
-            'cylinder_type'         => '12kg',
-            'quantity_ordered'      => 10,
-            'order_date'            => today()->toDateString(),
-            'requested_by'          => $this->pusat->id,
-            'status'                => 'approved',
+            'transportir_id' => $this->transportir->id,
+            'cost_borne_by' => 'sum',
+            'expedition_cost' => 5000,
+            'container_number' => 'CONT-2026-001',
+            'cylinder_type' => '12kg',
+            'quantity_ordered' => 10,
+            'order_date' => today()->toDateString(),
+            'requested_by' => $this->pusat->id,
+            'status' => 'approved',
         ]);
     }
 
     private function invoicePayload(array $overrides = []): array
     {
         return array_merge([
-            'branch_id'      => $this->branch->id,
-            'cylinder_type'  => '12kg',
-            'quantity'       => 10,
-            'issue_date'     => today()->toDateString(),
-            'due_date'       => today()->addDays(30)->toDateString(),
+            'branch_id' => $this->branch->id,
+            'cylinder_type' => '12kg',
+            'quantity' => 10,
+            'issue_date' => today()->toDateString(),
+            'due_date' => today()->addDays(30)->toDateString(),
         ], $overrides);
     }
 
@@ -167,10 +171,10 @@ class BranchInvoicePricingTest extends TestCase
     {
         $this->actingAs($this->pusat, 'sanctum');
 
-        $response = $this->getJson('/api/v1/prices/branch-cost-preview?' . http_build_query([
-            'branch_id'      => $this->branch->id,
-            'cylinder_type'  => '12kg',
-            'quantity'       => 10,
+        $response = $this->getJson('/api/v1/prices/branch-cost-preview?'.http_build_query([
+            'branch_id' => $this->branch->id,
+            'cylinder_type' => '12kg',
+            'quantity' => 10,
             'transportir_id' => $this->transportir->id,
             'expedition_cost' => 5000,
         ]));
@@ -188,9 +192,9 @@ class BranchInvoicePricingTest extends TestCase
     {
         $this->actingAs($this->pusat, 'sanctum');
 
-        $response = $this->getJson('/api/v1/prices/branch-cost-preview?' . http_build_query([
+        $response = $this->getJson('/api/v1/prices/branch-cost-preview?'.http_build_query([
             'loading_order_number' => $this->loe->do_number,
-            'cylinder_type'        => '12kg',
+            'cylinder_type' => '12kg',
         ]));
 
         $response->assertOk()

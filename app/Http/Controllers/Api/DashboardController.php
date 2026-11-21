@@ -26,8 +26,8 @@ class DashboardController extends Controller
             ->whereMonth('sale_date', now()->month)->sum('total_revenue');
         // DO flow retired (N-GEN-7): pending/active shipment counters read PO + LO.
         // Response keys are kept for mobilex compatibility.
-        $pendingDOs   = DeliveryOrder::purchaseOrders()->where('status', 'pending_approval')->count();
-        $activeDOs    = DeliveryOrder::whereIn('document_type', ['po', 'lo'])
+        $pendingDOs = DeliveryOrder::purchaseOrders()->where('status', 'pending_approval')->count();
+        $activeDOs = DeliveryOrder::whereIn('document_type', ['po', 'lo'])
             ->whereIn('status', ['approved', 'in_transit'])->count();
 
         // Low stock alerts
@@ -36,10 +36,10 @@ class DashboardController extends Controller
             ->orderBy('qty_full')
             ->get()
             ->map(fn ($s) => [
-                'branch_id'     => $s->branch_id,
-                'branch_name'   => $s->branch?->name,
+                'branch_id' => $s->branch_id,
+                'branch_name' => $s->branch?->name,
                 'cylinder_type' => $s->cylinder_type,
-                'qty_full'      => $s->qty_full,
+                'qty_full' => $s->qty_full,
             ]);
 
         // Sales chart — last 14 days
@@ -49,40 +49,40 @@ class DashboardController extends Controller
             ->orderBy('sale_date')
             ->get()
             ->map(fn ($r) => [
-                'date'    => $r->sale_date->toDateString(),
+                'date' => $r->sale_date->toDateString(),
                 'revenue' => (float) $r->revenue,
-                'qty'     => (int) $r->qty,
+                'qty' => (int) $r->qty,
             ]);
 
         // Branch summary
-        $branchCount   = Branch::where('status', 'active')->count();
-        $stockSummary  = StockItem::selectRaw('cylinder_type, SUM(qty_full) as total_full, SUM(qty_empty) as total_empty')
+        $branchCount = Branch::where('status', 'active')->count();
+        $stockSummary = StockItem::selectRaw('cylinder_type, SUM(qty_full) as total_full, SUM(qty_empty) as total_empty')
             ->groupBy('cylinder_type')
             ->get()
             ->map(fn ($r) => [
                 'cylinder_type' => $r->cylinder_type,
-                'total_full'    => (int) $r->total_full,
-                'total_empty'   => (int) $r->total_empty,
+                'total_full' => (int) $r->total_full,
+                'total_empty' => (int) $r->total_empty,
             ]);
 
         return $this->success([
             'stats' => [
-                'today_revenue'    => (float) $todayRevenue,
-                'month_revenue'    => (float) $monthRevenue,
+                'today_revenue' => (float) $todayRevenue,
+                'month_revenue' => (float) $monthRevenue,
                 'pending_do_count' => $pendingDOs,
-                'active_do_count'  => $activeDOs,
-                'branch_count'     => $branchCount,
-                'low_stock_count'  => $lowStock->count(),
+                'active_do_count' => $activeDOs,
+                'branch_count' => $branchCount,
+                'low_stock_count' => $lowStock->count(),
             ],
             'low_stock_alerts' => $lowStock,
-            'sales_chart'      => $chart,
-            'stock_summary'    => $stockSummary,
+            'sales_chart' => $chart,
+            'stock_summary' => $stockSummary,
         ]);
     }
 
     public function branch(Request $request): JsonResponse
     {
-        $user     = $request->user();
+        $user = $request->user();
         $branchId = $user->branch_id;
 
         if (! $branchId) {
@@ -101,10 +101,10 @@ class DashboardController extends Controller
         $stock = StockItem::where('branch_id', $branchId)->get()
             ->map(fn ($s) => [
                 'cylinder_type' => $s->cylinder_type,
-                'qty_full'      => (int) $s->qty_full,
-                'qty_empty'     => (int) $s->qty_empty,
-                'qty_damaged'   => (int) $s->qty_damaged,
-                'alert_level'   => $s->qty_full < 20 ? 'danger' : ($s->qty_full < 50 ? 'warning' : 'ok'),
+                'qty_full' => (int) $s->qty_full,
+                'qty_empty' => (int) $s->qty_empty,
+                'qty_damaged' => (int) $s->qty_damaged,
+                'alert_level' => $s->qty_full < 20 ? 'danger' : ($s->qty_full < 50 ? 'warning' : 'ok'),
             ]);
 
         $incomingDOs = DeliveryOrder::purchaseOrders()
@@ -114,13 +114,13 @@ class DashboardController extends Controller
             ->orderBy('eta')
             ->get()
             ->map(fn ($do) => [
-                'id'            => $do->id,
-                'do_number'     => $do->do_number,
+                'id' => $do->id,
+                'do_number' => $do->do_number,
                 'cylinder_type' => $do->cylinder_type,
-                'quantity'      => $do->quantity_ordered,
-                'status'        => $do->status,
-                'eta'           => $do->eta?->toDateString(),
-                'expedition'    => $do->expedition?->name,
+                'quantity' => $do->quantity_ordered,
+                'status' => $do->status,
+                'eta' => $do->eta?->toDateString(),
+                'expedition' => $do->expedition?->name,
             ]);
 
         // Last 7 days sales
@@ -131,23 +131,23 @@ class DashboardController extends Controller
             ->orderBy('sale_date')
             ->get()
             ->map(fn ($r) => [
-                'date'    => $r->sale_date->toDateString(),
+                'date' => $r->sale_date->toDateString(),
                 'revenue' => (float) $r->revenue,
-                'qty'     => (int) $r->qty,
+                'qty' => (int) $r->qty,
             ]);
 
         return $this->success([
             'branch_id' => $branchId,
             'stats' => [
-                'today_revenue'   => (float) $todayRevenue,
-                'month_revenue'   => (float) $monthRevenue,
-                'month_costs'     => (float) $monthCosts,
-                'month_profit'    => (float) ($monthRevenue - $monthCosts),
+                'today_revenue' => (float) $todayRevenue,
+                'month_revenue' => (float) $monthRevenue,
+                'month_costs' => (float) $monthCosts,
+                'month_profit' => (float) ($monthRevenue - $monthCosts),
                 'incoming_do_count' => $incomingDOs->count(),
             ],
-            'stock'        => $stock,
+            'stock' => $stock,
             'incoming_dos' => $incomingDOs,
-            'sales_chart'  => $chart,
+            'sales_chart' => $chart,
         ]);
     }
 }

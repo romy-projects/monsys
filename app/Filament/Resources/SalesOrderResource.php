@@ -15,6 +15,8 @@ use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Database\Eloquent\Model;
 
 class SalesOrderResource extends Resource
 {
@@ -27,6 +29,14 @@ class SalesOrderResource extends Resource
     protected static ?int $navigationSort = 2;
 
     protected static ?string $recordTitleAttribute = 'do_number';
+
+    public static function getEloquentQuery(): Builder
+    {
+        $query = parent::getEloquentQuery()->salesOrders();
+        $user = auth()->user();
+
+        return $user === null ? $query->whereRaw('1 = 0') : $query->accessibleTo($user);
+    }
 
     public static function getNavigationLabel(): string
     {
@@ -45,9 +55,12 @@ class SalesOrderResource extends Resource
 
     public static function form(Form $form): Form
     {
-        $user      = auth()->user();
-        $isPusat   = $user->isOwnerPusat() || $user->isRegionalLeader();
+        $user = auth()->user();
+        $branchIds = $user?->accessibleBranchIds() ?? [];
+        $canChooseBranch = $user?->canAccessAllBranches() || count($branchIds) > 1;
         $mainBranch = Branch::mainBranch()->first();
+        $branchQuery = Branch::active()->orderBy('name');
+        $user?->applyAccessibleBranchScope($branchQuery, 'branches.id');
 
         return $form->schema([
             Forms\Components\Section::make('Sales Order Details')
@@ -73,10 +86,10 @@ class SalesOrderResource extends Resource
                     Forms\Components\Select::make('cylinder_type')
                         ->label('Cylinder Type / Jenis Tabung')
                         ->options([
-                            '3kg'   => '3 kg',
+                            '3kg' => '3 kg',
                             '5.5kg' => '5.5 kg',
-                            '12kg'  => '12 kg',
-                            '50kg'  => '50 kg',
+                            '12kg' => '12 kg',
+                            '50kg' => '50 kg',
                         ])
                         ->required()
                         ->columnSpan(1),
@@ -98,10 +111,10 @@ class SalesOrderResource extends Resource
                 ->default('pertamina'),
 
             Forms\Components\Hidden::make('origin_branch_id')
-                ->default(fn() => $mainBranch?->id),
+                ->default(fn () => $mainBranch?->id),
 
             Forms\Components\Hidden::make('requested_by')
-                ->default(fn() => auth()->id()),
+                ->default(fn () => auth()->id()),
 
             // ----- Counterparty section (Pertamina) -----
             Forms\Components\Section::make('Counterparty (Pertamina)')
@@ -123,11 +136,11 @@ class SalesOrderResource extends Resource
             // ----- Route & Expedition (pusat only) -----
             Forms\Components\Section::make('Route & Expedition')
                 ->description('Origin, destination, and shipping details')
-                ->visible(fn() => $isPusat)
+                ->visible(fn () => $canChooseBranch)
                 ->schema([
                     Forms\Components\Select::make('destination_branch_id')
                         ->label('Destination Branch / Tujuan')
-                        ->options(Branch::active()->pluck('name', 'id'))
+                        ->options($branchQuery->pluck('name', 'id'))
                         ->searchable()
                         ->nullable()
                         ->columnSpan(1),
@@ -190,17 +203,9 @@ class SalesOrderResource extends Resource
 
     public static function table(Table $table): Table
     {
-        $user    = auth()->user();
-        $isPusat = $user->isOwnerPusat() || $user->isRegionalLeader();
-
         return $table
-            ->modifyQueryUsing(function (Builder $query) use ($user, $isPusat) {
-                $query->salesOrders()->with(['originBranch', 'destinationBranch', 'expedition']);
-
-                if (! $isPusat && $user->branch_id) {
-                    $query->where('origin_branch_id', $user->branch_id);
-                }
-            })
+            ->modifyQueryUsing(fn (Builder $query) => $query->with(['originBranch', 'destinationBranch', 'expedition'])
+            )
             ->columns([
                 Tables\Columns\TextColumn::make('do_number')
                     ->label('SO Number')
@@ -221,30 +226,30 @@ class SalesOrderResource extends Resource
 
                 Tables\Columns\TextColumn::make('quantity_ordered')
                     ->label('Qty')
-                    ->formatStateUsing(fn($state) => number_format($state) . ' pcs'),
+                    ->formatStateUsing(fn ($state) => number_format($state).' pcs'),
 
                 Tables\Columns\TextColumn::make('status')
                     ->label('Status')
                     ->badge()
-                    ->color(fn(string $state): string => match ($state) {
-                        'draft'            => 'gray',
+                    ->color(fn (string $state): string => match ($state) {
+                        'draft' => 'gray',
                         'pending_approval' => 'warning',
-                        'approved'         => 'info',
-                        'in_transit'       => 'primary',
-                        'on_transportir'   => 'purple',
-                        'delivered'        => 'success',
-                        'cancelled'        => 'danger',
-                        default            => 'gray',
+                        'approved' => 'info',
+                        'in_transit' => 'primary',
+                        'on_transportir' => 'purple',
+                        'delivered' => 'success',
+                        'cancelled' => 'danger',
+                        default => 'gray',
                     })
-                    ->formatStateUsing(fn($state) => match ($state) {
-                        'draft'            => 'Draft',
+                    ->formatStateUsing(fn ($state) => match ($state) {
+                        'draft' => 'Draft',
                         'pending_approval' => 'Pending Approval',
-                        'approved'         => 'Approved',
-                        'in_transit'       => 'In Transit',
-                        'on_transportir'   => 'On Transportir',
-                        'delivered'        => 'Delivered',
-                        'cancelled'        => 'Cancelled',
-                        default            => $state,
+                        'approved' => 'Approved',
+                        'in_transit' => 'In Transit',
+                        'on_transportir' => 'On Transportir',
+                        'delivered' => 'Delivered',
+                        'cancelled' => 'Cancelled',
+                        default => $state,
                     }),
 
                 Tables\Columns\TextColumn::make('order_date')
@@ -265,21 +270,21 @@ class SalesOrderResource extends Resource
             ->filters([
                 Tables\Filters\SelectFilter::make('status')
                     ->options([
-                        'draft'            => 'Draft',
+                        'draft' => 'Draft',
                         'pending_approval' => 'Pending Approval',
-                        'approved'         => 'Approved',
-                        'in_transit'       => 'In Transit',
-                        'on_transportir'   => 'On Transportir',
-                        'delivered'        => 'Delivered',
-                        'cancelled'        => 'Cancelled',
+                        'approved' => 'Approved',
+                        'in_transit' => 'In Transit',
+                        'on_transportir' => 'On Transportir',
+                        'delivered' => 'Delivered',
+                        'cancelled' => 'Cancelled',
                     ]),
 
                 Tables\Filters\SelectFilter::make('cylinder_type')
                     ->options([
-                        '3kg'   => '3 kg',
+                        '3kg' => '3 kg',
                         '5.5kg' => '5.5 kg',
-                        '12kg'  => '12 kg',
-                        '50kg'  => '50 kg',
+                        '12kg' => '12 kg',
+                        '50kg' => '50 kg',
                     ]),
             ])
             ->actions([
@@ -288,8 +293,15 @@ class SalesOrderResource extends Resource
                     ->label('Submit')
                     ->icon('heroicon-o-paper-airplane')
                     ->color('warning')
-                    ->visible(fn(DeliveryOrder $record) => $record->status === 'draft')
-                    ->action(fn(DeliveryOrder $record) => $record->update(['status' => 'pending_approval']))
+                    ->visible(fn (DeliveryOrder $record) => $record->status === 'draft' &&
+                        auth()->user()?->hasPermission('sales_orders.submit') &&
+                        auth()->user()?->canAccessModelRecord($record, 'update')
+                    )
+                    ->authorize(fn (DeliveryOrder $record) => $record->status === 'draft' &&
+                        auth()->user()?->hasPermission('sales_orders.submit') &&
+                        auth()->user()?->canAccessModelRecord($record, 'update')
+                    )
+                    ->action(fn (DeliveryOrder $record) => $record->update(['status' => 'pending_approval']))
                     ->requiresConfirmation()
                     ->modalHeading('Submit for Approval?')
                     ->modalDescription('This will send the SO to the central office for approval.'),
@@ -300,12 +312,16 @@ class SalesOrderResource extends Resource
                     ->icon('heroicon-o-check-circle')
                     ->color('success')
                     ->visible(
-                        fn(DeliveryOrder $record) =>
-                        $record->status === 'pending_approval' &&
-                            auth()->user()?->canApproveOrders()
+                        fn (DeliveryOrder $record) => $record->status === 'pending_approval' &&
+                            auth()->user()?->hasPermission('sales_orders.approve') &&
+                            auth()->user()?->canAccessModelRecord($record, 'update')
                     )
-                    ->action(fn(DeliveryOrder $record) => $record->update([
-                        'status'      => 'approved',
+                    ->authorize(fn (DeliveryOrder $record) => $record->status === 'pending_approval' &&
+                        auth()->user()?->hasPermission('sales_orders.approve') &&
+                        auth()->user()?->canAccessModelRecord($record, 'update')
+                    )
+                    ->action(fn (DeliveryOrder $record) => $record->update([
+                        'status' => 'approved',
                         'approved_by' => auth()->id(),
                         'approved_at' => now(),
                     ]))
@@ -318,30 +334,55 @@ class SalesOrderResource extends Resource
                     ->icon('heroicon-o-x-circle')
                     ->color('danger')
                     ->visible(
-                        fn(DeliveryOrder $record) =>
-                        ! in_array($record->status, ['delivered', 'cancelled']) &&
-                            auth()->user()?->canApproveOrders()
+                        fn (DeliveryOrder $record) => ! in_array($record->status, ['delivered', 'cancelled']) &&
+                            auth()->user()?->hasPermission('sales_orders.cancel') &&
+                            auth()->user()?->canAccessModelRecord($record, 'update')
                     )
-                    ->action(fn(DeliveryOrder $record) => $record->update(['status' => 'cancelled']))
+                    ->authorize(fn (DeliveryOrder $record) => ! in_array($record->status, ['delivered', 'cancelled']) &&
+                        auth()->user()?->hasPermission('sales_orders.cancel') &&
+                        auth()->user()?->canAccessModelRecord($record, 'update')
+                    )
+                    ->action(fn (DeliveryOrder $record) => $record->update(['status' => 'cancelled']))
                     ->requiresConfirmation(),
 
                 Tables\Actions\EditAction::make()
-                    ->visible(fn(DeliveryOrder $record) => $record->status === 'draft'),
+                    ->visible(fn (DeliveryOrder $record) => static::canEdit($record))
+                    ->authorize(fn (DeliveryOrder $record) => static::canEdit($record)),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make(),
+                    Tables\Actions\DeleteBulkAction::make()
+                        ->authorize(fn () => auth()->user()?->hasPermission('sales_orders.delete'))
+                        ->using(function (Collection $records): void {
+                            foreach ($records as $record) {
+                                abort_unless(static::canDelete($record), 403);
+                                $record->delete();
+                            }
+                        }),
                 ]),
             ])
             ->defaultSort('order_date', 'desc');
     }
 
-    /** Only Pusat/Regional can create SOs. */
     public static function canCreate(): bool
     {
-        $user = auth()->user();
+        return auth()->user()?->hasPermission('sales_orders.create') ?? false;
+    }
 
-        return $user->isOwnerPusat() || $user->isRegionalLeader();
+    public static function canEdit(Model $record): bool
+    {
+        return $record->document_type === 'so'
+            && $record->status === 'draft'
+            && auth()->user()?->hasPermission('sales_orders.update')
+            && auth()->user()?->canAccessModelRecord($record, 'update');
+    }
+
+    public static function canDelete(Model $record): bool
+    {
+        return $record->document_type === 'so'
+            && $record->status === 'draft'
+            && auth()->user()?->hasPermission('sales_orders.delete')
+            && auth()->user()?->canAccessModelRecord($record, 'delete');
     }
 
     public static function getRelations(): array
@@ -352,20 +393,14 @@ class SalesOrderResource extends Resource
     public static function getPages(): array
     {
         return [
-            'index'  => Pages\ListSalesOrders::route('/'),
+            'index' => Pages\ListSalesOrders::route('/'),
             'create' => Pages\CreateSalesOrder::route('/create'),
-            'edit'   => Pages\EditSalesOrder::route('/{record}/edit'),
+            'edit' => Pages\EditSalesOrder::route('/{record}/edit'),
         ];
     }
 
     public static function canAccess(): bool
     {
-        $user = auth()->user();
-
-        if (! $user) return false;
-
-        // Only Pusat/Regional can view Sales Orders
-        return $user->canAccessPanel(app(\Filament\Panel::class))
-            && ($user->isOwnerPusat() || $user->isRegionalLeader());
+        return auth()->user()?->hasPermission('sales_orders.view') ?? false;
     }
 }

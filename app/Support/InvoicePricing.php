@@ -2,6 +2,7 @@
 
 namespace App\Support;
 
+use App\Filament\Resources\LpgPriceResource;
 use App\Models\Branch;
 use App\Models\LpgPrice;
 use App\Models\User;
@@ -47,7 +48,10 @@ class InvoicePricing
         $branchName = $branchId ? Branch::find($branchId)?->name : null;
         $destination = $branchName ? " for {$branchName}" : '';
         $recipients = User::query()
-            ->whereIn('role', ['owner_pusat', 'regional_leader'])
+            ->whereHas('accessRole.permissions', fn ($query) => $query->whereIn(
+                'permissions.key',
+                ['system.business_admin', 'system.regional_access']
+            ))
             ->where('status', 'active')
             ->get();
 
@@ -62,7 +66,7 @@ class InvoicePricing
             ->actions([
                 Action::make('create_lpg_price')
                     ->label('Configure LPG Price')
-                    ->url(\App\Filament\Resources\LpgPriceResource::getUrl('create', [
+                    ->url(LpgPriceResource::getUrl('create', [
                         'branch_id' => $branchId,
                         'cylinder_type' => $type,
                         'effective_date' => $date,

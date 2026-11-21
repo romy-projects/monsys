@@ -2,8 +2,8 @@
 
 namespace App\Support;
 
-use ZipArchive;
 use SimpleXMLElement;
+use ZipArchive;
 
 /**
  * Minimal zero-dependency XLSX reader that reads ALL worksheets (not just sheet1).
@@ -14,7 +14,7 @@ class XlsxWorkbookReader
     private string $path;
 
     /**
-     * @param string $path Absolute path to the .xlsx file.
+     * @param  string  $path  Absolute path to the .xlsx file.
      */
     public function __construct(string $path)
     {
@@ -25,18 +25,18 @@ class XlsxWorkbookReader
      * Read every worksheet in workbook order.
      *
      * @return array<int, array<int, array<int, string>>>
-     *         sheet index -> rows -> 0-based column index -> raw cell value.
+     *                                                    sheet index -> rows -> 0-based column index -> raw cell value.
      */
     public function read(): array
     {
-        $zip = new ZipArchive();
+        $zip = new ZipArchive;
 
         if ($zip->open($this->path) !== true) {
             throw new \RuntimeException('Cannot open XLSX archive.');
         }
 
         $strings = $this->sharedStrings($zip);
-        $sheets  = [];
+        $sheets = [];
 
         for ($n = 1; $n <= 64; $n++) {
             $content = $zip->getFromName("xl/worksheets/sheet{$n}.xml");
@@ -74,14 +74,14 @@ class XlsxWorkbookReader
     private function parseSheet(string $content, array $strings): array
     {
         $rows = [];
-        $xml  = new SimpleXMLElement($content);
+        $xml = new SimpleXMLElement($content);
 
         foreach ($xml->sheetData->row as $row) {
             $cells = [];
 
             foreach ($row->c as $cell) {
-                $ref   = (string) $cell['r'];
-                $type  = (string) $cell['t'];
+                $ref = (string) $cell['r'];
+                $type = (string) $cell['t'];
                 $value = (string) $cell->v;
 
                 if ($type === 's' && $value !== '') {

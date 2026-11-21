@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Http\Traits\ApiResponse;
+use App\Models\Branch;
+use App\Models\Customer;
 use App\Models\DeliveryOrder;
 use App\Models\Invoice;
 use App\Models\TransportirRate;
@@ -19,49 +21,51 @@ class InvoiceController extends Controller
 {
     use ApiResponse;
 
-    public function __construct(private readonly DocumentNumberService $documentNumbers)
-    {
-    }
+    public function __construct(private readonly DocumentNumberService $documentNumbers) {}
 
     public function index(Request $request): JsonResponse
     {
-        $user = auth()->user();
-        $query = Invoice::with(['branch', 'customer', 'lpgPrice']);
-
-        if (! $user->isOwnerPusat() && ! $user->isRegionalLeader()) {
-            $query->where('branch_id', $user->branch_id);
+        $user = $request->user();
+        if (! $user->hasPermission('invoices.view')) {
+            return $this->forbidden();
         }
+
+        $query = Invoice::with(['branch', 'customer', 'lpgPrice']);
 
         if ($request->status) {
             $query->where('status', $request->status);
         }
-        if ($request->branch_id && ($user->isOwnerPusat() || $user->isRegionalLeader())) {
+        if ($request->filled('branch_id')) {
+            if (! $user->canAccessBranch((int) $request->branch_id)) {
+                return $this->forbidden();
+            }
+
             $query->where('branch_id', $request->branch_id);
         }
 
         $perPage = min((int) ($request->per_page ?? 15), 100);
 
-        return $this->paginated($query->paginate($perPage), fn(Invoice $inv) => [
-            'id'             => $inv->id,
+        return $this->paginated($query->paginate($perPage), fn (Invoice $inv) => [
+            'id' => $inv->id,
             'invoice_number' => $inv->invoice_number,
-            'branch'         => $inv->branch?->name,
-            'customer'       => $inv->customer?->name,
-            'cylinder_type'  => $inv->cylinder_type,
-            'quantity'       => $inv->quantity,
-            'unit_price'     => (float) $inv->unit_price,
-            'lpg_price_id'   => $inv->lpg_price_id,
-            'lpg_price'      => $inv->lpgPrice ? [
+            'branch' => $inv->branch?->name,
+            'customer' => $inv->customer?->name,
+            'cylinder_type' => $inv->cylinder_type,
+            'quantity' => $inv->quantity,
+            'unit_price' => (float) $inv->unit_price,
+            'lpg_price_id' => $inv->lpg_price_id,
+            'lpg_price' => $inv->lpgPrice ? [
                 'id' => $inv->lpgPrice->id,
                 'branch_id' => $inv->lpgPrice->branch_id,
                 'effective_date' => $inv->lpgPrice->effective_date?->toDateString(),
             ] : null,
-            'total_amount'   => (float) $inv->total_amount,
-            'paid_amount'    => (float) $inv->paid_amount,
-            'balance'        => $inv->balance,
-            'issue_date'     => $inv->issue_date->toDateString(),
-            'due_date'       => $inv->due_date->toDateString(),
-            'status'         => $inv->status,
-            'notes'          => $inv->notes,
+            'total_amount' => (float) $inv->total_amount,
+            'paid_amount' => (float) $inv->paid_amount,
+            'balance' => $inv->balance,
+            'issue_date' => $inv->issue_date->toDateString(),
+            'due_date' => $inv->due_date->toDateString(),
+            'status' => $inv->status,
+            'notes' => $inv->notes,
         ]);
     }
 
@@ -69,33 +73,39 @@ class InvoiceController extends Controller
     public function store(Request $request): JsonResponse
     {
         $user = $request->user();
+        if (! $user->hasPermission('invoices.create')) {
+            return $this->forbidden();
+        }
 
-        // Non-approvers may only create invoices for their own branch.
-        if (! $user->isOwnerPusat() && ! $user->isRegionalLeader()
-            && (int) $request->input('branch_id') !== $user->branch_id) {
-            return $this->forbidden('You may only create invoices for your own branch.');
+        if (! $user->canAccessBranch((int) $request->input('branch_id', 0))) {
+            return $this->forbidden();
         }
 
         $validator = Validator::make($request->all(), [
-            'branch_id'     => 'required|exists:branches,id',
-            'customer_id'   => 'nullable|exists:customers,id',
+            'branch_id' => 'required|exists:branches,id',
+            'customer_id' => 'nullable|exists:customers,id',
             'reference_type' => 'sometimes|in:branch,customer',
-            'reference_id'   => 'nullable|integer',
+            'reference_id' => 'nullable|integer',
             'cylinder_type' => 'required|in:3kg,5.5kg,12kg,50kg',
-            'quantity'      => 'required|integer|min:1',
-            'unit_price'    => 'sometimes|numeric|min:0',
-            'issue_date'    => 'required|date',
-            'due_date'      => 'required|date|after_or_equal:issue_date',
+            'quantity' => 'required|integer|min:1',
+            'unit_price' => 'sometimes|numeric|min:0',
+            'issue_date' => 'required|date',
+            'due_date' => 'required|date|after_or_equal:issue_date',
             'loading_order_number' => 'nullable|string|max:100',
-            'notes'         => 'nullable|string',
+            'notes' => 'nullable|string',
         ]);
-        $validator->after(function ($validator) use ($request): void {
+        $validator->after(function ($validator) use ($request, $user): void {
             $type = $request->input('reference_type');
             $referenceId = $request->input('reference_id');
+            $branchId = (int) $request->input('branch_id', 0);
 
-            if ($type === 'branch' && (! $referenceId || ! \App\Models\Branch::whereKey($referenceId)->exists())) {
+            if ($type === 'branch' && (
+                ! $referenceId ||
+                ! $user->canAccessBranch((int) $referenceId) ||
+                ! Branch::whereKey($referenceId)->exists()
+            )) {
                 $validator->errors()->add('reference_id', 'Select a valid destination branch.');
-            } elseif ($type === 'customer' && $referenceId !== null && ! \App\Models\Customer::whereKey($referenceId)->exists()) {
+            } elseif ($type === 'customer' && $referenceId !== null && ! Customer::whereKey($referenceId)->where('branch_id', $branchId)->exists()) {
                 $validator->errors()->add('reference_id', 'Select a valid customer.');
             } elseif ($type === 'customer' && ! $referenceId) {
                 $validator->errors()->add('reference_id', 'Select a customer.');
@@ -122,8 +132,8 @@ class InvoiceController extends Controller
         // LO and, when configured, add the delivery fee to the invoice total.
         $data = $this->applyTransportCosts($data);
 
-        $data['created_by']   = $user->id;
-        $data['status']       = 'draft';
+        $data['created_by'] = $user->id;
+        $data['status'] = 'draft';
 
         // Allocate INV<year>-NNN atomically instead of the racy count()+1 — invoice_number
         // is uniquely indexed, so concurrent creates would collide.
@@ -139,7 +149,7 @@ class InvoiceController extends Controller
     public function show(Invoice $invoice): JsonResponse
     {
         $user = auth()->user();
-        if (! $user->isOwnerPusat() && ! $user->isRegionalLeader() && $invoice->branch_id !== $user->branch_id) {
+        if (! $user->hasPermission('invoices.view') || ! $user->canAccessBranch((int) $invoice->branch_id)) {
             return $this->forbidden();
         }
 
@@ -149,32 +159,36 @@ class InvoiceController extends Controller
     public function update(Request $request, Invoice $invoice): JsonResponse
     {
         $user = auth()->user();
-        if (! $user->isOwnerPusat() && ! $user->isRegionalLeader() && $invoice->branch_id !== $user->branch_id) {
+        if (! $user->hasPermission('invoices.update') || ! $user->canAccessBranch((int) $invoice->branch_id)) {
             return $this->forbidden();
         }
 
         if (! in_array($invoice->status, ['draft', 'issued', 'partial', 'overdue'])) {
-            return $this->error('Cannot modify invoice with status: ' . $invoice->status, 422);
+            return $this->error('Cannot modify invoice with status: '.$invoice->status, 422);
         }
 
         $validator = Validator::make($request->all(), [
             'cylinder_type' => 'sometimes|in:3kg,5.5kg,12kg,50kg',
-            'quantity'      => 'sometimes|integer|min:1',
-            'unit_price'    => 'sometimes|numeric|min:0',
-            'issue_date'    => 'sometimes|date',
-            'due_date'      => 'sometimes|date',
+            'quantity' => 'sometimes|integer|min:1',
+            'unit_price' => 'sometimes|numeric|min:0',
+            'issue_date' => 'sometimes|date',
+            'due_date' => 'sometimes|date',
             'reference_type' => 'sometimes|in:branch,customer',
-            'reference_id'   => 'sometimes|nullable|integer',
-            'status'        => 'sometimes|in:draft,issued,cancelled',
-            'notes'         => 'nullable|string',
+            'reference_id' => 'sometimes|nullable|integer',
+            'status' => 'sometimes|in:draft,issued,cancelled',
+            'notes' => 'nullable|string',
         ]);
-        $validator->after(function ($validator) use ($request, $invoice): void {
+        $validator->after(function ($validator) use ($request, $invoice, $user): void {
             $type = $request->input('reference_type', $invoice->reference_type);
             $referenceId = $request->input('reference_id', $invoice->reference_id);
 
-            if ($type === 'branch' && (! $referenceId || ! \App\Models\Branch::whereKey($referenceId)->exists())) {
+            if ($type === 'branch' && (
+                ! $referenceId ||
+                ! $user->canAccessBranch((int) $referenceId) ||
+                ! Branch::whereKey($referenceId)->exists()
+            )) {
                 $validator->errors()->add('reference_id', 'Select a valid destination branch.');
-            } elseif ($type === 'customer' && $referenceId !== null && ! \App\Models\Customer::whereKey($referenceId)->exists()) {
+            } elseif ($type === 'customer' && $referenceId !== null && ! Customer::whereKey($referenceId)->where('branch_id', $invoice->branch_id)->exists()) {
                 $validator->errors()->add('reference_id', 'Select a valid customer.');
             }
         });
@@ -211,7 +225,7 @@ class InvoiceController extends Controller
         }
 
         if (isset($data['quantity']) || isset($data['unit_price'])) {
-            $qty  = $data['quantity'] ?? $invoice->quantity;
+            $qty = $data['quantity'] ?? $invoice->quantity;
             $unit = $data['unit_price'] ?? $invoice->unit_price;
             // Keep any delivery fee already charged on this invoice.
             $data['total_amount'] = (int) $qty * (float) $unit + (float) ($invoice->expedition_fee_amount ?? 0);
@@ -224,7 +238,8 @@ class InvoiceController extends Controller
 
     public function destroy(Invoice $invoice): JsonResponse
     {
-        if (! auth()->user()->isOwnerPusat()) {
+        if (! auth()->user()->hasPermission('invoices.delete')
+            || ! auth()->user()->canAccessBranch((int) $invoice->branch_id)) {
             return $this->forbidden();
         }
 
@@ -241,12 +256,12 @@ class InvoiceController extends Controller
     public function pay(Request $request, Invoice $invoice): JsonResponse
     {
         $user = auth()->user();
-        if (! $user->isOwnerPusat() && ! $user->isRegionalLeader() && $invoice->branch_id !== $user->branch_id) {
+        if (! $user->hasPermission('invoices.pay') || ! $user->canAccessBranch((int) $invoice->branch_id)) {
             return $this->forbidden();
         }
 
         if ($invoice->status === 'paid' || $invoice->status === 'cancelled') {
-            return $this->error('Cannot pay a ' . $invoice->status . ' invoice.', 422);
+            return $this->error('Cannot pay a '.$invoice->status.' invoice.', 422);
         }
 
         $data = Validator::make($request->all(), [
@@ -265,7 +280,7 @@ class InvoiceController extends Controller
     {
         $user = auth()->user();
 
-        if (! $user->isOwnerPusat() && ! $user->isRegionalLeader() && $invoice->branch_id !== $user->branch_id) {
+        if (! $user->hasPermission('invoices.issue') || ! $user->canAccessBranch((int) $invoice->branch_id)) {
             return $this->forbidden();
         }
 
@@ -299,8 +314,8 @@ class InvoiceController extends Controller
         if (! $lo) {
             return array_merge($data, [
                 'transportir_rate_at_sale' => null,
-                'expedition_cost_at_sale'  => null,
-                'expedition_fee_amount'    => 0,
+                'expedition_cost_at_sale' => null,
+                'expedition_fee_amount' => 0,
             ]);
         }
 
@@ -322,8 +337,8 @@ class InvoiceController extends Controller
             && (bool) config('app.expedition_fee_charged_to_buyer', false);
 
         $data['transportir_rate_at_sale'] = $rate;
-        $data['expedition_cost_at_sale']  = $fee;
-        $data['expedition_fee_amount']    = $charge ? $fee : 0;
+        $data['expedition_cost_at_sale'] = $fee;
+        $data['expedition_fee_amount'] = $charge ? $fee : 0;
 
         if ($charge) {
             $data['total_amount'] = (float) $data['total_amount'] + $fee;

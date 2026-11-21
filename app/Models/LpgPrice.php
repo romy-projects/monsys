@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\ScopesToAccessibleBranches;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -9,7 +10,7 @@ use Illuminate\Validation\ValidationException;
 
 class LpgPrice extends Model
 {
-    use HasFactory;
+    use HasFactory, ScopesToAccessibleBranches;
 
     protected $fillable = [
         'branch_id',
@@ -24,8 +25,13 @@ class LpgPrice extends Model
     protected $casts = [
         'effective_date' => 'date',
         'purchase_price' => 'decimal:2',
-        'selling_price'  => 'decimal:2',
+        'selling_price' => 'decimal:2',
     ];
+
+    public function includesUnassignedBranchRecords(): bool
+    {
+        return true;
+    }
 
     public function branch(): BelongsTo
     {
@@ -45,10 +51,8 @@ class LpgPrice extends Model
     /**
      * Get the price effective at a given date for a cylinder type.
      *
-     * @param  string      $cylinderType
-     * @param  string|null $date         Date string (Y-m-d). Defaults to today.
-     * @param  int|null    $branchId     Branch-specific price, falls back to global.
-     * @return self|null
+     * @param  string|null  $date  Date string (Y-m-d). Defaults to today.
+     * @param  int|null  $branchId  Branch-specific price, falls back to global.
      */
     public static function priceAtDate(string $cylinderType, ?string $date = null, ?int $branchId = null): ?self
     {
@@ -101,8 +105,7 @@ class LpgPrice extends Model
      * back to date-matched prices for legacy sales without a snapshot.
      *
      * @param  iterable  $sales  Collection of objects with ->cylinder_type, ->sale_date, ->quantity
-     * @param  int|null  $branchId
-     * @return float     Total HPP
+     * @return float Total HPP
      */
     public static function totalHppForSales(iterable $sales, ?int $branchId = null): float
     {
@@ -136,11 +139,11 @@ class LpgPrice extends Model
         $total = 0.0;
 
         foreach ($sales as $sale) {
-            $type     = $sale->cylinder_type;
+            $type = $sale->cylinder_type;
             $saleDate = $sale instanceof \stdClass
                 ? $sale->sale_date
                 : $sale->sale_date->toDateString();
-            $qty      = (int) ($sale->quantity ?? $sale->qty ?? 0);
+            $qty = (int) ($sale->quantity ?? $sale->qty ?? 0);
 
             if ($qty <= 0) {
                 continue;
@@ -148,6 +151,7 @@ class LpgPrice extends Model
 
             if (isset($sale->purchase_price_at_sale) && $sale->purchase_price_at_sale !== null) {
                 $total += (float) $sale->purchase_price_at_sale * $qty;
+
                 continue;
             }
 
@@ -158,14 +162,14 @@ class LpgPrice extends Model
                 $price = $branchPrices
                     ->where('branch_id', $saleBranchId)
                     ->where('cylinder_type', $type)
-                    ->filter(fn(self $candidate) => $candidate->effective_date->toDateString() <= $saleDate)
+                    ->filter(fn (self $candidate) => $candidate->effective_date->toDateString() <= $saleDate)
                     ->last();
             }
 
             if (! $price) {
                 $price = $allPrices
                     ->where('cylinder_type', $type)
-                    ->filter(fn(self $candidate) => $candidate->effective_date->toDateString() <= $saleDate)
+                    ->filter(fn (self $candidate) => $candidate->effective_date->toDateString() <= $saleDate)
                     ->last();
             }
 

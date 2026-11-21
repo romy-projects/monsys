@@ -16,6 +16,7 @@ class TabungSirkulasiReportTest extends TestCase
     use RefreshDatabase;
 
     private Branch $branch;
+
     private User $hqUser;
 
     protected function setUp(): void

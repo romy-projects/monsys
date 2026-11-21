@@ -25,7 +25,7 @@ class ReceivablePayment extends Model
 
     protected $casts = [
         'paid_on' => 'date',
-        'amount'  => 'decimal:2',
+        'amount' => 'decimal:2',
     ];
 
     public function receivable(): BelongsTo
@@ -42,10 +42,10 @@ class ReceivablePayment extends Model
     public static function methods(): array
     {
         return [
-            'cash'     => 'Tunai',
+            'cash' => 'Tunai',
             'transfer' => 'Transfer',
-            'giro'     => 'Giro',
-            'other'    => 'Lainnya',
+            'giro' => 'Giro',
+            'other' => 'Lainnya',
         ];
     }
 

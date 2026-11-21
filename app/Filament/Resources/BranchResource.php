@@ -7,8 +7,10 @@ use App\Models\Branch;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
+use Filament\Support\Enums\FontWeight;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 
 class BranchResource extends Resource
 {
@@ -21,6 +23,18 @@ class BranchResource extends Resource
     protected static ?int $navigationSort = 1;
 
     protected static ?string $recordTitleAttribute = 'name';
+
+    public static function getEloquentQuery(): Builder
+    {
+        $query = parent::getEloquentQuery();
+        $user = auth()->user();
+
+        if ($user !== null) {
+            $user->applyAccessibleBranchScope($query, 'branches.id');
+        }
+
+        return $query;
+    }
 
     public static function getNavigationLabel(): string
     {
@@ -73,7 +87,7 @@ class BranchResource extends Resource
                     Forms\Components\Select::make('status')
                         ->label('Status')
                         ->options([
-                            'active'   => '✅ Active',
+                            'active' => '✅ Active',
                             'inactive' => '⛔ Inactive',
                         ])
                         ->default('active')
@@ -105,7 +119,7 @@ class BranchResource extends Resource
                     ->label('Branch Name')
                     ->searchable()
                     ->sortable()
-                    ->weight(\Filament\Support\Enums\FontWeight::SemiBold),
+                    ->weight(FontWeight::SemiBold),
 
                 Tables\Columns\TextColumn::make('city')
                     ->label('City')
@@ -136,7 +150,7 @@ class BranchResource extends Resource
             ->filters([
                 Tables\Filters\SelectFilter::make('status')
                     ->options([
-                        'active'   => 'Active',
+                        'active' => 'Active',
                         'inactive' => 'Inactive',
                     ]),
             ])
@@ -159,15 +173,14 @@ class BranchResource extends Resource
     public static function getPages(): array
     {
         return [
-            'index'  => Pages\ListBranches::route('/'),
+            'index' => Pages\ListBranches::route('/'),
             'create' => Pages\CreateBranch::route('/create'),
-            'edit'   => Pages\EditBranch::route('/{record}/edit'),
+            'edit' => Pages\EditBranch::route('/{record}/edit'),
         ];
     }
 
     public static function canAccess(): bool
     {
-        return auth()->user()?->canAccessPanel(app(\Filament\Panel::class))
-            && in_array(auth()->user()?->role, ['owner_pusat', 'regional_leader']);
+        return static::can('viewAny');
     }
 }

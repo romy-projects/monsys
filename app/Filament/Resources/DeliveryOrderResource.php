@@ -28,6 +28,14 @@ class DeliveryOrderResource extends Resource
 
     protected static ?string $recordTitleAttribute = 'do_number';
 
+    public static function getEloquentQuery(): Builder
+    {
+        $query = parent::getEloquentQuery()->deliveryOrders();
+        $user = auth()->user();
+
+        return $user === null ? $query->whereRaw('1 = 0') : $query->accessibleTo($user);
+    }
+
     public static function shouldRegisterNavigation(): bool
     {
         return false;
@@ -50,8 +58,8 @@ class DeliveryOrderResource extends Resource
 
     public static function form(Form $form): Form
     {
-        $user   = auth()->user();
-        $isPusat = $user->isOwnerPusat() || $user->isRegionalLeader();
+        $user = auth()->user();
+        $isPusat = $user->canAccessAllBranches();
         $mainBranch = Branch::mainBranch()->first();
 
         return $form->schema([
@@ -77,10 +85,10 @@ class DeliveryOrderResource extends Resource
                     Forms\Components\Select::make('cylinder_type')
                         ->label('Cylinder Type / Jenis Tabung')
                         ->options([
-                            '3kg'   => '3 kg',
+                            '3kg' => '3 kg',
                             '5.5kg' => '5.5 kg',
-                            '12kg'  => '12 kg',
-                            '50kg'  => '50 kg',
+                            '12kg' => '12 kg',
+                            '50kg' => '50 kg',
                         ])
                         ->required()
                         ->columnSpan(1),
@@ -99,15 +107,15 @@ class DeliveryOrderResource extends Resource
                 ->default('inter_branch'),
 
             Forms\Components\Hidden::make('origin_branch_id')
-                ->default(fn() => $mainBranch?->id),
+                ->default(fn () => $mainBranch?->id),
 
             Forms\Components\Hidden::make('destination_branch_id')
-                ->default(fn() => $isPusat ? null : $user->branch_id),
+                ->default(fn () => $isPusat ? null : $user->branch_id),
 
             // ----- Route section (visible only for pusat/edit context) -----
             Forms\Components\Section::make('Route & Expedition')
                 ->description('Origin, destination, and shipping details (pusat only)')
-                ->visible(fn() => $isPusat)
+                ->visible(fn () => $isPusat)
                 ->schema([
                     Forms\Components\Select::make('origin_branch_id')
                         ->label('Origin Branch / Asal (Pusat)')
@@ -173,11 +181,11 @@ class DeliveryOrderResource extends Resource
                     Forms\Components\Select::make('shipment_status')
                         ->label('Shipment Status')
                         ->options([
-                            'at_transportir_warehouse'  => 'Masih di Gudang Transportir',
-                            'delivered_to_destination'  => 'Terkirim',
+                            'at_transportir_warehouse' => 'Masih di Gudang Transportir',
+                            'delivered_to_destination' => 'Terkirim',
                         ])
                         ->nullable()
-                        ->visible(fn(Forms\Get $get) => in_array($get('status'), ['in_transit', 'on_transportir']))
+                        ->visible(fn (Get $get) => in_array($get('status'), ['in_transit', 'on_transportir']))
                         ->live()
                         ->columnSpan(1),
                 ])->columns(2),
@@ -195,18 +203,8 @@ class DeliveryOrderResource extends Resource
 
     public static function table(Table $table): Table
     {
-        $user = auth()->user();
-        $isPusat = $user->isOwnerPusat() || $user->isRegionalLeader();
-
         return $table
-            ->modifyQueryUsing(function (Builder $query) use ($user, $isPusat) {
-                $query->deliveryOrders()->with(['originBranch', 'destinationBranch', 'expedition']);
-
-                if (! $isPusat && $user->branch_id) {
-                    // Regular branch: see DOs where they are the destination (incoming stock request)
-                    $query->where('destination_branch_id', $user->branch_id);
-                }
-            })
+            ->modifyQueryUsing(fn (Builder $query) => $query->with(['originBranch', 'destinationBranch', 'expedition']))
             ->columns([
                 Tables\Columns\TextColumn::make('do_number')
                     ->label('DO Number')
@@ -231,30 +229,30 @@ class DeliveryOrderResource extends Resource
 
                 Tables\Columns\TextColumn::make('quantity_ordered')
                     ->label('Qty')
-                    ->formatStateUsing(fn($state) => number_format($state) . ' pcs'),
+                    ->formatStateUsing(fn ($state) => number_format($state).' pcs'),
 
                 Tables\Columns\TextColumn::make('status')
                     ->label('Status')
                     ->badge()
-                    ->color(fn(string $state): string => match ($state) {
-                        'draft'            => 'gray',
+                    ->color(fn (string $state): string => match ($state) {
+                        'draft' => 'gray',
                         'pending_approval' => 'warning',
-                        'approved'         => 'info',
-                        'in_transit'       => 'primary',
-                        'on_transportir'   => 'purple',
-                        'delivered'        => 'success',
-                        'cancelled'        => 'danger',
-                        default            => 'gray',
+                        'approved' => 'info',
+                        'in_transit' => 'primary',
+                        'on_transportir' => 'purple',
+                        'delivered' => 'success',
+                        'cancelled' => 'danger',
+                        default => 'gray',
                     })
-                    ->formatStateUsing(fn($state) => match ($state) {
-                        'draft'            => 'Draft',
+                    ->formatStateUsing(fn ($state) => match ($state) {
+                        'draft' => 'Draft',
                         'pending_approval' => 'Pending Approval',
-                        'approved'         => 'Approved',
-                        'in_transit'       => 'In Transit',
-                        'on_transportir'   => 'On Transportir',
-                        'delivered'        => 'Delivered',
-                        'cancelled'        => 'Cancelled',
-                        default            => $state,
+                        'approved' => 'Approved',
+                        'in_transit' => 'In Transit',
+                        'on_transportir' => 'On Transportir',
+                        'delivered' => 'Delivered',
+                        'cancelled' => 'Cancelled',
+                        default => $state,
                     }),
 
                 Tables\Columns\TextColumn::make('eta')
@@ -284,151 +282,31 @@ class DeliveryOrderResource extends Resource
             ->filters([
                 Tables\Filters\SelectFilter::make('status')
                     ->options([
-                        'draft'            => 'Draft',
+                        'draft' => 'Draft',
                         'pending_approval' => 'Pending Approval',
-                        'approved'         => 'Approved',
-                        'in_transit'       => 'In Transit',
-                        'on_transportir'   => 'On Transportir',
-                        'delivered'        => 'Delivered',
-                        'cancelled'        => 'Cancelled',
+                        'approved' => 'Approved',
+                        'in_transit' => 'In Transit',
+                        'on_transportir' => 'On Transportir',
+                        'delivered' => 'Delivered',
+                        'cancelled' => 'Cancelled',
                     ]),
 
                 Tables\Filters\SelectFilter::make('cylinder_type')
                     ->options([
-                        '3kg'   => '3 kg',
+                        '3kg' => '3 kg',
                         '5.5kg' => '5.5 kg',
-                        '12kg'  => '12 kg',
-                        '50kg'  => '50 kg',
+                        '12kg' => '12 kg',
+                        '50kg' => '50 kg',
                     ]),
             ])
             ->actions([
-                // Download receipt
                 Tables\Actions\Action::make('download_receipt')
                     ->label('Receipt')
                     ->icon('heroicon-o-document-arrow-down')
                     ->color('success')
-                    ->visible(fn(DeliveryOrder $record) => $record->receipt_path)
-                    ->url(fn(DeliveryOrder $record) => asset('storage/' . $record->receipt_path))
+                    ->visible(fn (DeliveryOrder $record) => filled($record->receipt_path))
+                    ->url(fn (DeliveryOrder $record) => asset('storage/'.$record->receipt_path))
                     ->openUrlInNewTab(),
-
-                // Submit (Branch)
-                Tables\Actions\Action::make('submit')
-                    ->label('Submit')
-                    ->icon('heroicon-o-paper-airplane')
-                    ->color('warning')
-                    ->visible(
-                        fn(DeliveryOrder $record) =>
-                        $record->status === 'draft'
-                    )
-                    ->action(
-                        fn(DeliveryOrder $record) =>
-                        $record->update(['status' => 'pending_approval'])
-                    )
-                    ->requiresConfirmation()
-                    ->modalHeading('Submit for Approval?')
-                    ->modalDescription('This will send the DO to the central office for approval.'),
-
-                // Approve (HQ only)
-                Tables\Actions\Action::make('approve')
-                    ->label('Approve')
-                    ->icon('heroicon-o-check-circle')
-                    ->color('success')
-                    ->visible(
-                        fn(DeliveryOrder $record) =>
-                        $record->status === 'pending_approval' &&
-                            auth()->user()?->canApproveOrders()
-                    )
-                    ->action(fn(DeliveryOrder $record) => $record->update([
-                        'status'      => 'approved',
-                        'approved_by' => auth()->id(),
-                        'approved_at' => now(),
-                    ]))
-                    ->requiresConfirmation()
-                    ->modalHeading('Approve this Delivery Order?'),
-
-                // In Transit (HQ)
-                Tables\Actions\Action::make('mark_in_transit')
-                    ->label('In Transit')
-                    ->icon('heroicon-o-truck')
-                    ->color('info')
-                    ->visible(
-                        fn(DeliveryOrder $record) =>
-                        $record->status === 'approved' &&
-                            auth()->user()?->canApproveOrders()
-                    )
-                    ->action(
-                        fn(DeliveryOrder $record) =>
-                        $record->update(['status' => 'in_transit'])
-                    )
-                    ->requiresConfirmation()
-                    ->modalHeading('Mark as In Transit?'),
-
-                // On Transportir (HQ)
-                Tables\Actions\Action::make('mark_on_transportir')
-                    ->label('On Transportir')
-                    ->icon('heroicon-o-truck')
-                    ->color('purple')
-                    ->visible(
-                        fn(DeliveryOrder $record) =>
-                        $record->status === 'in_transit' &&
-                            auth()->user()?->canApproveOrders()
-                    )
-                    ->action(
-                        fn(DeliveryOrder $record) =>
-                        $record->update(['status' => 'on_transportir'])
-                    )
-                    ->requiresConfirmation()
-                    ->modalHeading('Mark as On Transportir?')
-                    ->modalDescription('Confirm the shipment is now with the transportir/expedition.'),
-
-                // Upload Receipt — D10 (2026-11-20): proof of delivery now lives on the PO
-                // (PurchaseOrderResource → "Upload Bukti Terima"); the DO flow is retired.
-
-                // Delivered (Branch - marks arrival)
-                Tables\Actions\Action::make('mark_delivered')
-                    ->label('Delivered')
-                    ->icon('heroicon-o-check-badge')
-                    ->color('success')
-                    ->visible(
-                        fn(DeliveryOrder $record) =>
-                        in_array($record->status, ['in_transit', 'on_transportir'])
-                    )
-                    ->form([
-                        Forms\Components\TextInput::make('quantity_received')
-                            ->label('Quantity Received / Jumlah Diterima')
-                            ->numeric()
-                            ->required()
-                            ->minValue(1)
-                            ->suffix('pcs'),
-                        Forms\Components\DatePicker::make('received_date')
-                            ->label('Date Received')
-                            ->required()
-                            ->default(today()),
-                    ])
-                    ->action(fn(DeliveryOrder $record, array $data) => $record->update([
-                        'status'            => 'delivered',
-                        'quantity_received' => $data['quantity_received'],
-                        'received_date'     => $data['received_date'],
-                    ]))
-                    ->modalHeading('Confirm Delivery')
-                    ->modalDescription('Mark this DO as arrived at the destination branch.'),
-
-                // Cancel (HQ only)
-                Tables\Actions\Action::make('cancel')
-                    ->label('Cancel')
-                    ->icon('heroicon-o-x-circle')
-                    ->color('danger')
-                    ->visible(
-                        fn(DeliveryOrder $record) =>
-                        ! in_array($record->status, ['delivered', 'cancelled']) &&
-                            auth()->user()?->canApproveOrders()
-                    )
-                    ->action(
-                        fn(DeliveryOrder $record) =>
-                        $record->update(['status' => 'cancelled'])
-                    )
-                    ->requiresConfirmation(),
-
             ])
             // Bulk delete removed: legacy DO rows are immutable history (N-GEN-7).
             ->bulkActions([])
@@ -467,12 +345,6 @@ class DeliveryOrderResource extends Resource
 
     public static function canAccess(): bool
     {
-        $user = auth()->user();
-
-        if (! $user) return false;
-
-        // Only Pusat/Regional can access DO resource — branches use PO instead
-        return $user->canAccessPanel(app(\Filament\Panel::class))
-            && ($user->isOwnerPusat() || $user->isRegionalLeader());
+        return auth()->user()?->hasPermission('legacy_delivery_orders.view') ?? false;
     }
 }

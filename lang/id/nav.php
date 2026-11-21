@@ -10,6 +10,7 @@ return [
         'finance'   => 'Keuangan',
         'master'    => 'Data Master',
         'reports'   => 'Laporan',
+        'access'    => 'Kontrol Akses',
     ],
 
     // Item Navigasi
@@ -58,5 +59,9 @@ return [
         'report_export'       => 'Ekspor Excel',
         'report_audit'        => 'Laporan Audit Stok',
         'report_consolidated' => 'Laba Rugi Konsolidasi',
+
+        // Kontrol Akses
+        'access_roles'        => 'Peran Akses',
+        'impersonation_audit' => 'Audit Impersonasi',
     ],
 ];

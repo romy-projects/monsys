@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\ScopesToAccessibleBranches;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -9,7 +10,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Receivable extends Model
 {
-    use HasFactory;
+    use HasFactory, ScopesToAccessibleBranches;
 
     protected $fillable = [
         'branch_id',
@@ -28,9 +29,9 @@ class Receivable extends Model
 
     protected $casts = [
         'invoice_date' => 'date',
-        'due_date'     => 'date',
-        'amount'       => 'decimal:2',
-        'paid_amount'  => 'decimal:2',
+        'due_date' => 'date',
+        'amount' => 'decimal:2',
+        'paid_amount' => 'decimal:2',
     ];
 
     public function branch(): BelongsTo
@@ -96,6 +97,6 @@ class Receivable extends Model
     {
         static::whereIn('status', ['outstanding', 'partial'])
             ->where('due_date', '<', today())
-            ->each(fn($r) => $r->recalculateStatus());
+            ->each(fn ($r) => $r->recalculateStatus());
     }
 }

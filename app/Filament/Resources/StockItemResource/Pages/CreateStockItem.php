@@ -13,7 +13,10 @@ class CreateStockItem extends CreateRecord
     {
         abort_unless(StockItemResource::canCreate(), 403);
 
-        $data['branch_id'] = auth()->user()->branch_id;
+        $user = auth()->user();
+        $branchId = (int) ($data['branch_id'] ?? $user->branch_id ?? 0);
+        abort_unless($user->canAccessBranch($branchId), 403);
+        $data['branch_id'] = $branchId;
 
         return $data;
     }

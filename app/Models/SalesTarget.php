@@ -2,13 +2,15 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\ScopesToAccessibleBranches;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Collection;
 
 class SalesTarget extends Model
 {
-    use HasFactory;
+    use HasFactory, ScopesToAccessibleBranches;
 
     protected $fillable = [
         'branch_id', 'year', 'month', 'cylinder_type',
@@ -16,9 +18,9 @@ class SalesTarget extends Model
     ];
 
     protected $casts = [
-        'year'           => 'integer',
-        'month'          => 'integer',
-        'target_qty'     => 'integer',
+        'year' => 'integer',
+        'month' => 'integer',
+        'target_qty' => 'integer',
         'target_revenue' => 'decimal:2',
     ];
 
@@ -33,7 +35,7 @@ class SalesTarget extends Model
     }
 
     /** Total target for a branch in a given year/month, keyed by cylinder_type. */
-    public static function forMonth(int $branchId, int $year, int $month): \Illuminate\Support\Collection
+    public static function forMonth(int $branchId, int $year, int $month): Collection
     {
         return static::where('branch_id', $branchId)
             ->where('year', $year)

@@ -25,13 +25,13 @@ class DocumentNumberService
 {
     /** Model + number column that owns each document type. */
     private const SOURCES = [
-        'so'   => [DeliveryOrder::class, 'do_number'],
-        'do'   => [DeliveryOrder::class, 'do_number'],
-        'lo'   => [DeliveryOrder::class, 'do_number'],
+        'so' => [DeliveryOrder::class, 'do_number'],
+        'do' => [DeliveryOrder::class, 'do_number'],
+        'lo' => [DeliveryOrder::class, 'do_number'],
         'lo_t' => [DeliveryOrder::class, 'do_number'],
         'lo_e' => [DeliveryOrder::class, 'do_number'],
-        'po'   => [DeliveryOrder::class, 'do_number'],
-        'inv'  => [Invoice::class, 'invoice_number'],
+        'po' => [DeliveryOrder::class, 'do_number'],
+        'inv' => [Invoice::class, 'invoice_number'],
     ];
 
     /**
@@ -42,21 +42,21 @@ class DocumentNumberService
      * specific Transportir LO.
      */
     private const PREFIXES = [
-        'so'   => 'SO',
-        'do'   => 'DO',
-        'lo'   => 'LO',
+        'so' => 'SO',
+        'do' => 'DO',
+        'lo' => 'LO',
         'lo_t' => 'LOT',
         'lo_e' => 'LOE',
-        'po'   => 'PO',
-        'inv'  => 'INV',
+        'po' => 'PO',
+        'inv' => 'INV',
     ];
 
     /**
      * Reserve and return the next number for a document type.
      *
-     * @param  string   $type  One of: so, do, lo, lo_t, lo_e, po, inv
-     * @param  int|null $year  Defaults to the current year
-     * @return string          e.g. 'PO2026-001', 'LOT2026-001', 'LOE2026-001'
+     * @param  string  $type  One of: so, do, lo, lo_t, lo_e, po, inv
+     * @param  int|null  $year  Defaults to the current year
+     * @return string e.g. 'PO2026-001', 'LOT2026-001', 'LOE2026-001'
      */
     public function next(string $type, ?int $year = null): string
     {
@@ -109,10 +109,10 @@ class DocumentNumberService
         // concurrent caller waits here instead of creating a colliding number.
         DB::table('document_sequences')->insertOrIgnore([
             'document_type' => $type,
-            'year'          => $year,
-            'last_number'   => 0,
-            'created_at'    => now(),
-            'updated_at'    => now(),
+            'year' => $year,
+            'last_number' => 0,
+            'created_at' => now(),
+            'updated_at' => now(),
         ]);
 
         return $query()->first();
@@ -122,7 +122,7 @@ class DocumentNumberService
     {
         $prefix = self::PREFIXES[$type] ?? strtoupper($type);
 
-        return $prefix . $year . '-' . str_pad((string) $number, 3, '0', STR_PAD_LEFT);
+        return $prefix.$year.'-'.str_pad((string) $number, 3, '0', STR_PAD_LEFT);
     }
 
     private function isTaken(string $type, string $candidate): bool

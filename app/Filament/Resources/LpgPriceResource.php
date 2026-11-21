@@ -35,7 +35,15 @@ class LpgPriceResource extends Resource
 
     public static function form(Form $form): Form
     {
-        $isPusat = auth()->user()?->isOwnerPusat();
+        $user = auth()->user();
+        $branchIds = $user?->accessibleBranchIds() ?? [];
+        $branchQuery = Branch::active()->orderBy('name');
+        $user?->applyAccessibleBranchScope($branchQuery, 'branches.id');
+        $canChooseBranch = $user?->canAccessAllBranches() || count($branchIds) > 1;
+        $defaultBranchId = request()->query('branch_id');
+        if ($defaultBranchId !== null && ! $user?->canAccessBranch((int) $defaultBranchId)) {
+            $defaultBranchId = null;
+        }
 
         return $form->schema([
             Forms\Components\Section::make('Price Configuration')
@@ -43,38 +51,38 @@ class LpgPriceResource extends Resource
                 ->schema([
                     Forms\Components\Select::make('branch_id')
                         ->label('Branch (Optional)')
-                        ->options(Branch::active()->orderBy('name')->pluck('name', 'id'))
+                        ->options($branchQuery->pluck('name', 'id'))
                         ->searchable()
                         ->nullable()
-                        ->default(fn() => request()->query('branch_id'))
-                        ->visible(fn() => $isPusat)
-                        ->afterStateUpdated(fn(Forms\Set $set) => $set('purchase_order_id', null))
+                        ->default($defaultBranchId)
+                        ->visible($canChooseBranch)
+                        ->afterStateUpdated(fn (Forms\Set $set) => $set('purchase_order_id', null))
                         ->helperText('Leave empty for global price. Select a branch for branch-specific override.')
                         ->columnSpan(1),
 
                     Forms\Components\Select::make('cylinder_type')
                         ->label('Cylinder Type / Jenis Tabung')
                         ->options([
-                            '3kg'   => '3 kg',
+                            '3kg' => '3 kg',
                             '5.5kg' => '5.5 kg',
-                            '12kg'  => '12 kg',
-                            '50kg'  => '50 kg',
+                            '12kg' => '12 kg',
+                            '50kg' => '50 kg',
                         ])
                         ->required()
-                        ->default(fn() => request()->query('cylinder_type'))
+                        ->default(fn () => request()->query('cylinder_type'))
                         ->live()
-                        ->afterStateUpdated(fn(Forms\Set $set) => $set('purchase_order_id', null))
+                        ->afterStateUpdated(fn (Forms\Set $set) => $set('purchase_order_id', null))
                         ->columnSpan(1),
 
                     Forms\Components\Select::make('purchase_order_id')
                         ->label('Related Purchase Order / PO (Optional)')
-                        ->options(fn(Forms\Get $get) => filled($get('branch_id')) && filled($get('cylinder_type'))
+                        ->options(fn (Forms\Get $get) => filled($get('branch_id')) && filled($get('cylinder_type'))
                             ? DeliveryOrder::purchaseOrders()
                                 ->where('destination_branch_id', $get('branch_id'))
                                 ->where('cylinder_type', $get('cylinder_type'))
                                 ->orderByDesc('created_at')
                                 ->get()
-                                ->mapWithKeys(fn(DeliveryOrder $po): array => [
+                                ->mapWithKeys(fn (DeliveryOrder $po): array => [
                                     $po->id => "{$po->do_number} — entered {$po->created_at?->format('d M Y')}",
                                 ])
                                 ->all()
@@ -82,7 +90,7 @@ class LpgPriceResource extends Resource
                         ->searchable()
                         ->nullable()
                         ->live()
-                        ->visible(fn(Forms\Get $get) => filled($get('branch_id')) && filled($get('cylinder_type')))
+                        ->visible(fn (Forms\Get $get) => filled($get('branch_id')) && filled($get('cylinder_type')))
                         ->afterStateUpdated(function ($state, Forms\Set $set): void {
                             if (! filled($state)) {
                                 return;
@@ -99,8 +107,8 @@ class LpgPriceResource extends Resource
                     Forms\Components\DatePicker::make('effective_date')
                         ->label('Effective Date / Berlaku Mulai')
                         ->required()
-                        ->default(fn() => request()->query('effective_date', today()->toDateString()))
-                        ->disabled(fn(Forms\Get $get) => filled($get('purchase_order_id')))
+                        ->default(fn () => request()->query('effective_date', today()->toDateString()))
+                        ->disabled(fn (Forms\Get $get) => filled($get('purchase_order_id')))
                         ->dehydrated()
                         ->columnSpan(1),
 
@@ -147,19 +155,19 @@ class LpgPriceResource extends Resource
 
                 Tables\Columns\TextColumn::make('purchase_price')
                     ->label('Purchase Price (HPP)')
-                    ->formatStateUsing(fn($state) => 'Rp ' . number_format($state, 0, ',', '.'))
+                    ->formatStateUsing(fn ($state) => 'Rp '.number_format($state, 0, ',', '.'))
                     ->color('danger'),
 
                 Tables\Columns\TextColumn::make('selling_price')
                     ->label('Selling Price')
-                    ->formatStateUsing(fn($state) => 'Rp ' . number_format($state, 0, ',', '.'))
+                    ->formatStateUsing(fn ($state) => 'Rp '.number_format($state, 0, ',', '.'))
                     ->color('success'),
 
                 Tables\Columns\TextColumn::make('margin')
                     ->label('Margin')
                     ->getStateUsing(
-                        fn(LpgPrice $record): string => $record->purchase_price > 0
-                            ? round((($record->selling_price - $record->purchase_price) / $record->selling_price) * 100, 1) . '%'
+                        fn (LpgPrice $record): string => $record->purchase_price > 0
+                            ? round((($record->selling_price - $record->purchase_price) / $record->selling_price) * 100, 1).'%'
                             : '—'
                     )
                     ->badge()
@@ -177,27 +185,25 @@ class LpgPriceResource extends Resource
             ->filters([
                 Tables\Filters\SelectFilter::make('cylinder_type')
                     ->options([
-                        '3kg'   => '3 kg',
+                        '3kg' => '3 kg',
                         '5.5kg' => '5.5 kg',
-                        '12kg'  => '12 kg',
-                        '50kg'  => '50 kg',
+                        '12kg' => '12 kg',
+                        '50kg' => '50 kg',
                     ]),
 
                 Tables\Filters\SelectFilter::make('branch_id')
                     ->label('Branch')
-                    ->options(Branch::active()->orderBy('name')->pluck('name', 'id'))
-                    ->visible(fn() => auth()->user()?->isOwnerPusat()),
+                    ->options(function () {
+                        $user = auth()->user();
+                        $query = Branch::active()->orderBy('name');
+                        $user?->applyAccessibleBranchScope($query, 'branches.id');
+
+                        return $query->pluck('name', 'id');
+                    })
+                    ->visible(fn () => auth()->user()?->canAccessAllBranches() ||
+                        count(auth()->user()?->accessibleBranchIds() ?? []) > 1
+                    ),
             ])
-            ->modifyQueryUsing(function ($query) {
-                $user = auth()->user();
-                if (! $user->isOwnerPusat() && ! $user->isRegionalLeader()) {
-                    $query->where(
-                        fn($q) =>
-                        $q->where('branch_id', $user->branch_id)
-                            ->orWhereNull('branch_id')
-                    );
-                }
-            })
             ->defaultSort('effective_date', 'desc');
     }
 
@@ -209,15 +215,15 @@ class LpgPriceResource extends Resource
     public static function getPages(): array
     {
         return [
-            'index'  => Pages\ListLpgPrices::route('/'),
+            'index' => Pages\ListLpgPrices::route('/'),
             'create' => Pages\CreateLpgPrice::route('/create'),
-            'edit'   => Pages\EditLpgPrice::route('/{record}/edit'),
+            'edit' => Pages\EditLpgPrice::route('/{record}/edit'),
         ];
     }
 
     public static function canAccess(): bool
     {
-        return in_array(auth()->user()?->role, ['owner_pusat', 'regional_leader']);
+        return static::can('viewAny');
     }
 
     public static function canEdit(Model $record): bool

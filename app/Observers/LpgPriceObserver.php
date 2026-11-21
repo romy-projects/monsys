@@ -2,8 +2,8 @@
 
 namespace App\Observers;
 
-use App\Models\LpgPrice;
 use App\Models\DeliveryOrder;
+use App\Models\LpgPrice;
 use App\Models\User;
 use Filament\Notifications\Notification;
 use Illuminate\Validation\ValidationException;
@@ -52,23 +52,32 @@ class LpgPriceObserver
     private function notifyAffectedUsers(LpgPrice $price): void
     {
         $admins = User::query()
-            ->whereIn('role', ['owner_pusat', 'regional_leader'])
+            ->whereHas('accessRole.permissions', fn ($query) => $query->whereIn(
+                'permissions.key',
+                ['system.business_admin', 'system.regional_access']
+            ))
             ->where('status', 'active');
 
         $branchUsers = User::query()
-            ->whereIn('role', ['owner_cabang', 'staff_gudang'])
+            ->whereHas('accessRole.permissions', fn ($query) => $query->whereIn(
+                'permissions.key',
+                ['system.branch_owner', 'system.warehouse_staff']
+            ))
             ->where('status', 'active');
 
         if ($price->branch_id) {
             $branchIds = [$price->branch_id];
         } else {
             $branchIds = User::query()
-                ->whereIn('role', ['owner_cabang', 'staff_gudang'])
+                ->whereHas('accessRole.permissions', fn ($query) => $query->whereIn(
+                    'permissions.key',
+                    ['system.branch_owner', 'system.warehouse_staff']
+                ))
                 ->where('status', 'active')
                 ->whereNotNull('branch_id')
                 ->distinct()
                 ->pluck('branch_id')
-                ->filter(fn(int $branchId): bool => LpgPrice::priceAtDate(
+                ->filter(fn (int $branchId): bool => LpgPrice::priceAtDate(
                     $price->cylinder_type,
                     $price->effective_date->toDateString(),
                     $branchId,
@@ -84,12 +93,12 @@ class LpgPriceObserver
         }
 
         $scope = $price->branch_id
-            ? 'for ' . ($price->branch?->name ?? 'the selected branch')
+            ? 'for '.($price->branch?->name ?? 'the selected branch')
             : 'for the affected branches';
 
         Notification::make()
             ->title('LPG Price changed')
-            ->body("LPG Price #{$price->id} for {$price->cylinder_type} {$scope} is effective {$price->effective_date?->format('d M Y')}. Selling price: Rp " . number_format((float) $price->selling_price, 0, ',', '.') . '.')
+            ->body("LPG Price #{$price->id} for {$price->cylinder_type} {$scope} is effective {$price->effective_date?->format('d M Y')}. Selling price: Rp ".number_format((float) $price->selling_price, 0, ',', '.').'.')
             ->info()
             ->sendToDatabase($recipients);
     }

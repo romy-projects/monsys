@@ -2,9 +2,9 @@
 
 namespace Tests\Feature;
 
+use App\Filament\Resources\CylinderCirculationResource;
 use App\Filament\Resources\StockItemResource;
 use App\Filament\Resources\StockMutationResource;
-use App\Filament\Resources\CylinderCirculationResource;
 use App\Models\Branch;
 use App\Models\CylinderCirculation;
 use App\Models\DeliveryOrder;
@@ -20,8 +20,11 @@ class PurchaseOrderReceiptFlowTest extends TestCase
     use RefreshDatabase;
 
     private Branch $hqBranch;
+
     private Branch $requestingBranch;
+
     private User $hqUser;
+
     private User $branchUser;
 
     protected function setUp(): void
@@ -90,7 +93,7 @@ class PurchaseOrderReceiptFlowTest extends TestCase
             ->assertOk()
             ->assertJsonPath('data.status', 'delivered');
 
-        $this->assertSame(2, StockMutation::where('purchase_order_id', $po->id)->count());
+        $this->assertSame(2, StockMutation::withoutGlobalScopes()->where('purchase_order_id', $po->id)->count());
         $this->assertDatabaseHas('stock_mutations', [
             'purchase_order_id' => $po->id,
             'branch_id' => $this->hqBranch->id,
@@ -103,10 +106,10 @@ class PurchaseOrderReceiptFlowTest extends TestCase
             'mutation_type' => 'in',
             'quantity' => 17,
         ]);
-        $this->assertSame(83, $hqStock->fresh()->qty_full);
+        $this->assertSame(83, StockItem::withoutGlobalScopes()->findOrFail($hqStock->id)->qty_full);
         $this->assertSame(27, $branchStock->fresh()->qty_full);
 
-        $circulation = CylinderCirculation::where('purchase_order_id', $po->id)->firstOrFail();
+        $circulation = CylinderCirculation::withoutGlobalScopes()->where('purchase_order_id', $po->id)->firstOrFail();
         $this->assertSame($this->requestingBranch->id, $circulation->branch_id);
         $this->assertSame('kirim', $circulation->transaction_type);
         $this->assertSame('debit', $circulation->direction);
@@ -126,9 +129,9 @@ class PurchaseOrderReceiptFlowTest extends TestCase
         $po->update(['shipment_status' => 'at_transportir_warehouse']);
         $po->update(['shipment_status' => 'delivered_to_destination']);
 
-        $this->assertSame(2, StockMutation::where('purchase_order_id', $po->id)->count());
-        $this->assertSame(1, CylinderCirculation::where('purchase_order_id', $po->id)->count());
-        $this->assertSame(83, $hqStock->fresh()->qty_full);
+        $this->assertSame(2, StockMutation::withoutGlobalScopes()->where('purchase_order_id', $po->id)->count());
+        $this->assertSame(1, CylinderCirculation::withoutGlobalScopes()->where('purchase_order_id', $po->id)->count());
+        $this->assertSame(83, StockItem::withoutGlobalScopes()->findOrFail($hqStock->id)->qty_full);
         $this->assertSame(27, $branchStock->fresh()->qty_full);
 
         $this->actingAs($this->hqUser, 'sanctum')
@@ -151,7 +154,11 @@ class PurchaseOrderReceiptFlowTest extends TestCase
 
         $this->assertSame(
             [0, 0],
-            StockMutation::where('purchase_order_id', $po->id)->orderBy('mutation_type')->pluck('quantity')->all()
+            StockMutation::withoutGlobalScopes()
+                ->where('purchase_order_id', $po->id)
+                ->orderBy('mutation_type')
+                ->pluck('quantity')
+                ->all()
         );
         $this->assertSame(0, CylinderCirculation::where('purchase_order_id', $po->id)->value('quantity'));
     }

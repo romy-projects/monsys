@@ -16,6 +16,7 @@ use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 
 class PurchaseOrderResource extends Resource
@@ -29,6 +30,14 @@ class PurchaseOrderResource extends Resource
     protected static ?int $navigationSort = 4;
 
     protected static ?string $recordTitleAttribute = 'do_number';
+
+    public static function getEloquentQuery(): Builder
+    {
+        $query = parent::getEloquentQuery()->purchaseOrders();
+        $user = auth()->user();
+
+        return $user === null ? $query->whereRaw('1 = 0') : $query->accessibleTo($user);
+    }
 
     public static function getNavigationLabel(): string
     {
@@ -47,10 +56,18 @@ class PurchaseOrderResource extends Resource
 
     public static function form(Form $form): Form
     {
-        $user       = auth()->user();
-        $isPusat    = $user->isOwnerPusat();
-        $canManageRoute = $isPusat || $user->isRegionalLeader();
+        $user = auth()->user();
+        $branchIds = $user?->accessibleBranchIds() ?? [];
+        $canManageRoute = $user?->canAccessAllBranches() || count($branchIds) > 1;
         $mainBranch = Branch::mainBranch()->first();
+        $branchQuery = Branch::active()
+            ->when($mainBranch, fn (Builder $query) => $query->where('id', '!=', $mainBranch->id))
+            ->orderBy('name');
+        $user?->applyAccessibleBranchScope($branchQuery, 'branches.id');
+        $destinationOptions = $branchQuery->pluck('name', 'id');
+        $defaultDestinationId = $user?->branch_id !== null && in_array((int) $user->branch_id, $branchIds, true)
+            ? $user->branch_id
+            : ($branchIds[0] ?? null);
 
         return $form->schema([
             Forms\Components\Section::make('Purchase Order Details')
@@ -76,10 +93,10 @@ class PurchaseOrderResource extends Resource
                     Forms\Components\Select::make('cylinder_type')
                         ->label('Cylinder Type / Jenis Tabung')
                         ->options([
-                            '3kg'   => '3 kg',
+                            '3kg' => '3 kg',
                             '5.5kg' => '5.5 kg',
-                            '12kg'  => '12 kg',
-                            '50kg'  => '50 kg',
+                            '12kg' => '12 kg',
+                            '50kg' => '50 kg',
                         ])
                         ->required()
                         ->columnSpan(1),
@@ -101,14 +118,14 @@ class PurchaseOrderResource extends Resource
                 ->default('branch'),
 
             Forms\Components\Hidden::make('origin_branch_id')
-                ->default(fn() => $mainBranch?->id),
+                ->default(fn () => $mainBranch?->id),
 
             Forms\Components\Hidden::make('destination_branch_id')
-                ->default(fn() => $isPusat ? null : $user->branch_id)
-                ->visible(fn() => ! $canManageRoute),
+                ->default($defaultDestinationId)
+                ->visible(fn () => ! $canManageRoute),
 
             Forms\Components\Hidden::make('requested_by')
-                ->default(fn() => auth()->id()),
+                ->default(fn () => auth()->id()),
 
             // ----- Counterparty section -----
             Forms\Components\Section::make('Counterparty (Main Branch)')
@@ -117,7 +134,7 @@ class PurchaseOrderResource extends Resource
                     Forms\Components\TextInput::make('counterparty_name')
                         ->label('Main Branch Name')
                         ->placeholder('e.g. SUM Pusat')
-                        ->default(fn() => $mainBranch?->name)
+                        ->default(fn () => $mainBranch?->name)
                         ->required()
                         ->disabled()
                         ->dehydrated()
@@ -132,16 +149,11 @@ class PurchaseOrderResource extends Resource
             // ----- Route & Expedition (pusat only) -----
             Forms\Components\Section::make('Route & Expedition')
                 ->description('Origin, destination, and shipping details')
-                ->visible(fn() => $canManageRoute)
+                ->visible(fn () => $canManageRoute)
                 ->schema([
                     Forms\Components\Select::make('destination_branch_id')
                         ->label('Requesting Branch / Cabang Pemohon')
-                        ->options(
-                            Branch::active()
-                                ->when($mainBranch, fn (Builder $query) => $query->where('id', '!=', $mainBranch->id))
-                                ->orderBy('name')
-                                ->pluck('name', 'id')
-                        )
+                        ->options($destinationOptions)
                         ->searchable()
                         ->required()
                         ->disabled(fn (string $operation): bool => $operation === 'edit')
@@ -221,17 +233,11 @@ class PurchaseOrderResource extends Resource
 
     public static function table(Table $table): Table
     {
-        $user    = auth()->user();
-        $isPusat = $user->isOwnerPusat() || $user->isRegionalLeader();
+        $user = auth()->user();
 
         return $table
-            ->modifyQueryUsing(function (Builder $query) use ($user, $isPusat) {
-                $query->purchaseOrders()->with(['originBranch', 'destinationBranch', 'expedition', 'requestedBy']);
-
-                if (! $isPusat) {
-                    $query->where('destination_branch_id', $user->branch_id);
-                }
-            })
+            ->modifyQueryUsing(fn (Builder $query) => $query->with(['originBranch', 'destinationBranch', 'expedition', 'requestedBy'])
+            )
             ->columns([
                 Tables\Columns\TextColumn::make('do_number')
                     ->label('PO Number')
@@ -261,7 +267,7 @@ class PurchaseOrderResource extends Resource
 
                 Tables\Columns\TextColumn::make('quantity_ordered')
                     ->label('Qty')
-                    ->formatStateUsing(fn($state) => number_format($state) . ' pcs'),
+                    ->formatStateUsing(fn ($state) => number_format($state).' pcs'),
 
                 Tables\Columns\TextColumn::make('transportir_id')
                     ->label('Transportir Rate')
@@ -274,25 +280,25 @@ class PurchaseOrderResource extends Resource
                 Tables\Columns\TextColumn::make('status')
                     ->label('Status')
                     ->badge()
-                    ->color(fn(string $state): string => match ($state) {
-                        'draft'            => 'gray',
+                    ->color(fn (string $state): string => match ($state) {
+                        'draft' => 'gray',
                         'pending_approval' => 'warning',
-                        'approved'         => 'info',
-                        'in_transit'       => 'primary',
-                        'on_transportir'   => 'purple',
-                        'delivered'        => 'success',
-                        'cancelled'        => 'danger',
-                        default            => 'gray',
+                        'approved' => 'info',
+                        'in_transit' => 'primary',
+                        'on_transportir' => 'purple',
+                        'delivered' => 'success',
+                        'cancelled' => 'danger',
+                        default => 'gray',
                     })
-                    ->formatStateUsing(fn($state) => match ($state) {
-                        'draft'            => 'Draft',
+                    ->formatStateUsing(fn ($state) => match ($state) {
+                        'draft' => 'Draft',
                         'pending_approval' => 'Pending Approval',
-                        'approved'         => 'Approved',
-                        'in_transit'       => 'In Transit',
-                        'on_transportir'   => 'On Transportir',
-                        'delivered'        => 'Delivered',
-                        'cancelled'        => 'Cancelled',
-                        default            => $state,
+                        'approved' => 'Approved',
+                        'in_transit' => 'In Transit',
+                        'on_transportir' => 'On Transportir',
+                        'delivered' => 'Delivered',
+                        'cancelled' => 'Cancelled',
+                        default => $state,
                     }),
 
                 Tables\Columns\TextColumn::make('eta')
@@ -323,21 +329,21 @@ class PurchaseOrderResource extends Resource
             ->filters([
                 Tables\Filters\SelectFilter::make('status')
                     ->options([
-                        'draft'            => 'Draft',
+                        'draft' => 'Draft',
                         'pending_approval' => 'Pending Approval',
-                        'approved'         => 'Approved',
-                        'in_transit'       => 'In Transit',
-                        'on_transportir'   => 'On Transportir',
-                        'delivered'        => 'Delivered',
-                        'cancelled'        => 'Cancelled',
+                        'approved' => 'Approved',
+                        'in_transit' => 'In Transit',
+                        'on_transportir' => 'On Transportir',
+                        'delivered' => 'Delivered',
+                        'cancelled' => 'Cancelled',
                     ]),
 
                 Tables\Filters\SelectFilter::make('cylinder_type')
                     ->options([
-                        '3kg'   => '3 kg',
+                        '3kg' => '3 kg',
                         '5.5kg' => '5.5 kg',
-                        '12kg'  => '12 kg',
-                        '50kg'  => '50 kg',
+                        '12kg' => '12 kg',
+                        '50kg' => '50 kg',
                     ]),
             ])
             ->actions([
@@ -346,8 +352,15 @@ class PurchaseOrderResource extends Resource
                     ->label('Submit')
                     ->icon('heroicon-o-paper-airplane')
                     ->color('warning')
-                    ->visible(fn(DeliveryOrder $record) => $record->status === 'draft')
-                    ->action(fn(DeliveryOrder $record) => $record->update(['status' => 'pending_approval']))
+                    ->visible(fn (DeliveryOrder $record) => $record->status === 'draft' &&
+                        auth()->user()?->hasPermission('purchase_orders.submit') &&
+                        auth()->user()?->canAccessModelRecord($record, 'update')
+                    )
+                    ->authorize(fn (DeliveryOrder $record) => $record->status === 'draft' &&
+                        auth()->user()?->hasPermission('purchase_orders.submit') &&
+                        auth()->user()?->canAccessModelRecord($record, 'update')
+                    )
+                    ->action(fn (DeliveryOrder $record) => $record->update(['status' => 'pending_approval']))
                     ->requiresConfirmation()
                     ->modalHeading('Submit for Approval?')
                     ->modalDescription('This will send the PO to the central office for approval.'),
@@ -358,12 +371,16 @@ class PurchaseOrderResource extends Resource
                     ->icon('heroicon-o-check-circle')
                     ->color('success')
                     ->visible(
-                        fn(DeliveryOrder $record) =>
-                        $record->status === 'pending_approval' &&
-                            auth()->user()?->canApproveOrders()
+                        fn (DeliveryOrder $record) => $record->status === 'pending_approval' &&
+                            auth()->user()?->hasPermission('purchase_orders.approve') &&
+                            auth()->user()?->canAccessModelRecord($record, 'update')
                     )
-                    ->action(fn(DeliveryOrder $record) => $record->update([
-                        'status'      => 'approved',
+                    ->authorize(fn (DeliveryOrder $record) => $record->status === 'pending_approval' &&
+                        auth()->user()?->hasPermission('purchase_orders.approve') &&
+                        auth()->user()?->canAccessModelRecord($record, 'update')
+                    )
+                    ->action(fn (DeliveryOrder $record) => $record->update([
+                        'status' => 'approved',
                         'approved_by' => auth()->id(),
                         'approved_at' => now(),
                     ]))
@@ -376,11 +393,15 @@ class PurchaseOrderResource extends Resource
                     ->icon('heroicon-o-truck')
                     ->color('info')
                     ->visible(
-                        fn(DeliveryOrder $record) =>
-                        $record->status === 'approved' &&
-                            auth()->user()?->canApproveOrders()
+                        fn (DeliveryOrder $record) => $record->status === 'approved' &&
+                            auth()->user()?->hasPermission('purchase_orders.mark_in_transit') &&
+                            auth()->user()?->canAccessModelRecord($record, 'update')
                     )
-                    ->action(fn(DeliveryOrder $record) => $record->update(['status' => 'in_transit']))
+                    ->authorize(fn (DeliveryOrder $record) => $record->status === 'approved' &&
+                        auth()->user()?->hasPermission('purchase_orders.mark_in_transit') &&
+                        auth()->user()?->canAccessModelRecord($record, 'update')
+                    )
+                    ->action(fn (DeliveryOrder $record) => $record->update(['status' => 'in_transit']))
                     ->requiresConfirmation()
                     ->modalHeading('Mark as In Transit?'),
 
@@ -390,10 +411,13 @@ class PurchaseOrderResource extends Resource
                     ->icon('heroicon-o-check-badge')
                     ->color('success')
                     ->visible(
-                        fn(DeliveryOrder $record) =>
-                        in_array($record->status, ['in_transit', 'on_transportir'])
-                            && auth()->user()?->canCreatePurchaseOrder()
-                            && auth()->user()?->branch_id === $record->destination_branch_id
+                        fn (DeliveryOrder $record) => in_array($record->status, ['in_transit', 'on_transportir'])
+                            && auth()->user()?->hasPermission('purchase_orders.receive')
+                            && auth()->user()?->canAccessBranch((int) $record->destination_branch_id)
+                    )
+                    ->authorize(fn (DeliveryOrder $record) => in_array($record->status, ['in_transit', 'on_transportir'], true) &&
+                        auth()->user()?->hasPermission('purchase_orders.receive') &&
+                        auth()->user()?->canAccessBranch((int) $record->destination_branch_id)
                     )
                     ->form([
                         Forms\Components\TextInput::make('quantity_received')
@@ -407,10 +431,10 @@ class PurchaseOrderResource extends Resource
                             ->required()
                             ->default(today()),
                     ])
-                    ->action(fn(DeliveryOrder $record, array $data) => $record->update([
-                        'status'            => 'delivered',
+                    ->action(fn (DeliveryOrder $record, array $data) => $record->update([
+                        'status' => 'delivered',
                         'quantity_received' => $data['quantity_received'],
-                        'received_date'     => $data['received_date'],
+                        'received_date' => $data['received_date'],
                     ]))
                     ->modalHeading('Confirm Delivery')
                     ->modalDescription('Mark this PO as arrived at the destination branch.'),
@@ -421,10 +445,13 @@ class PurchaseOrderResource extends Resource
                     ->icon('heroicon-o-document-arrow-up')
                     ->color('success')
                     ->visible(
-                        fn(DeliveryOrder $record) =>
-                        in_array($record->status, ['in_transit', 'delivered'], true) &&
-                            (auth()->user()?->canApproveOrders() ||
-                                ((int) auth()->user()?->branch_id === (int) $record->destination_branch_id))
+                        fn (DeliveryOrder $record) => in_array($record->status, ['in_transit', 'delivered'], true) &&
+                            auth()->user()?->hasPermission('purchase_orders.upload_receipt') &&
+                            auth()->user()?->canAccessBranch((int) $record->destination_branch_id)
+                    )
+                    ->authorize(fn (DeliveryOrder $record) => in_array($record->status, ['in_transit', 'delivered'], true) &&
+                        auth()->user()?->hasPermission('purchase_orders.upload_receipt') &&
+                        auth()->user()?->canAccessBranch((int) $record->destination_branch_id)
                     )
                     ->form([
                         Forms\Components\FileUpload::make('receipt_path')
@@ -434,7 +461,7 @@ class PurchaseOrderResource extends Resource
                             ->maxSize(2048)
                             ->required(),
                     ])
-                    ->action(fn(DeliveryOrder $record, array $data) => $record->update(['receipt_path' => $data['receipt_path']]))
+                    ->action(fn (DeliveryOrder $record, array $data) => $record->update(['receipt_path' => $data['receipt_path']]))
                     ->modalHeading('Upload Bukti Terima (PO)')
                     ->modalDescription('JPG / PNG / PDF, maksimal 2 MB.'),
 
@@ -444,50 +471,55 @@ class PurchaseOrderResource extends Resource
                     ->icon('heroicon-o-x-circle')
                     ->color('danger')
                     ->visible(
-                        fn(DeliveryOrder $record) =>
-                        ! in_array($record->status, ['delivered', 'cancelled']) &&
-                            auth()->user()?->canApproveOrders()
+                        fn (DeliveryOrder $record) => ! in_array($record->status, ['delivered', 'cancelled']) &&
+                            auth()->user()?->hasPermission('purchase_orders.cancel') &&
+                            auth()->user()?->canAccessModelRecord($record, 'update')
                     )
-                    ->action(fn(DeliveryOrder $record) => $record->update(['status' => 'cancelled']))
+                    ->authorize(fn (DeliveryOrder $record) => ! in_array($record->status, ['delivered', 'cancelled']) &&
+                        auth()->user()?->hasPermission('purchase_orders.cancel') &&
+                        auth()->user()?->canAccessModelRecord($record, 'update')
+                    )
+                    ->action(fn (DeliveryOrder $record) => $record->update(['status' => 'cancelled']))
                     ->requiresConfirmation(),
 
                 Tables\Actions\EditAction::make()
-                    ->visible(fn(DeliveryOrder $record) => static::canEdit($record)),
+                    ->visible(fn (DeliveryOrder $record) => static::canEdit($record))
+                    ->authorize(fn (DeliveryOrder $record) => static::canEdit($record)),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make(),
+                    Tables\Actions\DeleteBulkAction::make()
+                        ->authorize(fn () => auth()->user()?->hasPermission('purchase_orders.delete'))
+                        ->using(function (Collection $records): void {
+                            foreach ($records as $record) {
+                                abort_unless(static::canDelete($record), 403);
+                                $record->delete();
+                            }
+                        }),
                 ]),
             ])
             ->defaultSort('order_date', 'desc');
     }
 
-    /** Pusat and branch users can create POs; regional users can only manage them. */
     public static function canCreate(): bool
     {
-        $user = auth()->user();
-
-        return $user->isOwnerPusat() || $user->canCreatePurchaseOrder();
+        return auth()->user()?->hasPermission('purchase_orders.create') ?? false;
     }
 
     public static function canEdit(Model $record): bool
     {
-        $user = auth()->user();
-
         return $record->document_type === 'po' &&
             $record->status === 'draft' &&
-            ($user?->isOwnerPusat() ||
-                ($user?->canCreatePurchaseOrder() && $record->destination_branch_id === $user->branch_id));
+            auth()->user()?->hasPermission('purchase_orders.update') &&
+            auth()->user()?->canAccessBranch((int) $record->destination_branch_id);
     }
 
     public static function canDelete(Model $record): bool
     {
-        $user = auth()->user();
-
         return $record->document_type === 'po' &&
             $record->status === 'draft' &&
-            ($user?->isOwnerPusat() ||
-                ($user?->canCreatePurchaseOrder() && $record->destination_branch_id === $user->branch_id));
+            auth()->user()?->hasPermission('purchase_orders.delete') &&
+            auth()->user()?->canAccessBranch((int) $record->destination_branch_id);
     }
 
     /**
@@ -507,7 +539,7 @@ class PurchaseOrderResource extends Resource
 
     private static function money(float $amount): string
     {
-        return 'Rp ' . number_format($amount, 0, ',', '.');
+        return 'Rp '.number_format($amount, 0, ',', '.');
     }
 
     public static function getRelations(): array
@@ -518,19 +550,14 @@ class PurchaseOrderResource extends Resource
     public static function getPages(): array
     {
         return [
-            'index'  => Pages\ListPurchaseOrders::route('/'),
+            'index' => Pages\ListPurchaseOrders::route('/'),
             'create' => Pages\CreatePurchaseOrder::route('/create'),
-            'edit'   => Pages\EditPurchaseOrder::route('/{record}/edit'),
+            'edit' => Pages\EditPurchaseOrder::route('/{record}/edit'),
         ];
     }
 
     public static function canAccess(): bool
     {
-        $user = auth()->user();
-
-        if (! $user) return false;
-
-        // All roles can view Purchase Orders (branches create, pusat approves)
-        return $user->canAccessPanel(app(\Filament\Panel::class));
+        return auth()->user()?->hasPermission('purchase_orders.view') ?? false;
     }
 }

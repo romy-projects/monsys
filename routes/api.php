@@ -3,19 +3,19 @@
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BranchPricingController;
 use App\Http\Controllers\Api\CostController;
+use App\Http\Controllers\Api\CylinderCirculationController;
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\DeliveryOrderController;
-use App\Http\Controllers\Api\LoadingOrderController;
-use App\Http\Controllers\Api\PurchaseOrderController;
-use App\Http\Controllers\Api\SalesOrderController;
 use App\Http\Controllers\Api\DeviceController;
 use App\Http\Controllers\Api\InvoiceController;
+use App\Http\Controllers\Api\LoadingOrderController;
 use App\Http\Controllers\Api\MasterDataController;
-use App\Http\Controllers\Api\CylinderCirculationController;
 use App\Http\Controllers\Api\PayableController;
-use App\Http\Controllers\Api\ReportController;
+use App\Http\Controllers\Api\PurchaseOrderController;
 use App\Http\Controllers\Api\ReconciliationController;
+use App\Http\Controllers\Api\ReportController;
 use App\Http\Controllers\Api\SalesController;
+use App\Http\Controllers\Api\SalesOrderController;
 use App\Http\Controllers\Api\ScanController;
 use App\Http\Controllers\Api\StockController;
 use App\Http\Controllers\ImportController;
@@ -29,6 +29,15 @@ use Illuminate\Support\Facades\Route;
 
 Route::group([], function () {
 
+    // Bare prefix probe — `GET /api/v1` used to answer with the framework's 404
+    // page, which made a correctly mounted API look missing. It now names the
+    // entry point. No data and no auth, so it also works as an uptime check.
+    Route::get('/', fn () => response()->json([
+        'name' => config('app.name'),
+        'version' => 'v1',
+        'status' => 'ok',
+    ]));
+
     // Public Auth
     Route::post('auth/login', [AuthController::class, 'login']);
 
@@ -37,6 +46,7 @@ Route::group([], function () {
 
         // Auth
         Route::post('auth/logout', [AuthController::class, 'logout']);
+        Route::post('auth/password', [AuthController::class, 'changePassword']);
         Route::get('me', [AuthController::class, 'me']);
         Route::post('auth/refresh', [AuthController::class, 'refreshToken']);
 

@@ -8,6 +8,7 @@ use App\Models\SalesTarget;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
+use Filament\Support\Enums\FontWeight;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Model;
@@ -36,6 +37,15 @@ class SalesTargetResource extends Resource
 
     public static function form(Form $form): Form
     {
+        $user = auth()->user();
+        $branchIds = $user?->accessibleBranchIds() ?? [];
+        $branchQuery = Branch::active()->orderBy('name');
+        $user?->applyAccessibleBranchScope($branchQuery, 'branches.id');
+        $branchOptions = $branchQuery->pluck('name', 'id');
+        $defaultBranchId = $user?->branch_id !== null && in_array((int) $user->branch_id, $branchIds, true)
+            ? $user->branch_id
+            : ($branchIds[0] ?? null);
+
         $months = [
             1 => 'January',
             2 => 'February',
@@ -52,7 +62,7 @@ class SalesTargetResource extends Resource
         ];
 
         $years = collect(range(now()->year - 1, now()->year + 2))
-            ->mapWithKeys(fn($y) => [$y => (string) $y])
+            ->mapWithKeys(fn ($y) => [$y => (string) $y])
             ->all();
 
         return $form->schema([
@@ -60,7 +70,8 @@ class SalesTargetResource extends Resource
                 ->schema([
                     Forms\Components\Select::make('branch_id')
                         ->label('Branch')
-                        ->options(Branch::active()->orderBy('name')->pluck('name', 'id'))
+                        ->options($branchOptions)
+                        ->default($defaultBranchId)
                         ->searchable()
                         ->required()
                         ->columnSpan(2),
@@ -77,10 +88,10 @@ class SalesTargetResource extends Resource
 
                     Forms\Components\Select::make('cylinder_type')
                         ->options([
-                            '3kg'   => '3 kg',
+                            '3kg' => '3 kg',
                             '5.5kg' => '5.5 kg',
-                            '12kg'  => '12 kg',
-                            '50kg'  => '50 kg',
+                            '12kg' => '12 kg',
+                            '50kg' => '50 kg',
                         ])
                         ->required(),
 
@@ -123,13 +134,13 @@ class SalesTargetResource extends Resource
                     ->label('Branch')
                     ->searchable()
                     ->sortable()
-                    ->weight(\Filament\Support\Enums\FontWeight::SemiBold),
+                    ->weight(FontWeight::SemiBold),
 
                 Tables\Columns\TextColumn::make('year')
                     ->sortable(),
 
                 Tables\Columns\TextColumn::make('month')
-                    ->formatStateUsing(fn($state) => $months[$state] ?? $state)
+                    ->formatStateUsing(fn ($state) => $months[$state] ?? $state)
                     ->sortable(),
 
                 Tables\Columns\TextColumn::make('cylinder_type')
@@ -144,14 +155,19 @@ class SalesTargetResource extends Resource
 
                 Tables\Columns\TextColumn::make('target_revenue')
                     ->label('Target Revenue')
-                    ->formatStateUsing(fn($state) => 'Rp ' . number_format($state, 0, ',', '.'))
+                    ->formatStateUsing(fn ($state) => 'Rp '.number_format($state, 0, ',', '.'))
                     ->sortable(),
             ])
             ->defaultSort('year', 'desc')
             ->filters([
                 Tables\Filters\SelectFilter::make('branch_id')
                     ->label('Branch')
-                    ->options(Branch::active()->orderBy('name')->pluck('name', 'id')),
+                    ->options(function () {
+                        $query = Branch::active()->orderBy('name');
+                        auth()->user()?->applyAccessibleBranchScope($query, 'branches.id');
+
+                        return $query->pluck('name', 'id');
+                    }),
 
                 Tables\Filters\SelectFilter::make('cylinder_type')
                     ->options(['3kg' => '3kg', '5.5kg' => '5.5kg', '12kg' => '12kg', '50kg' => '50kg']),
@@ -164,14 +180,7 @@ class SalesTargetResource extends Resource
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make(),
                 ]),
-            ])
-            ->modifyQueryUsing(function ($query) {
-                $user = auth()->user();
-
-                if (! $user->isOwnerPusat() && ! $user->isRegionalLeader()) {
-                    $query->where('branch_id', $user->branch_id);
-                }
-            });
+            ]);
     }
 
     public static function getRelations(): array
@@ -182,29 +191,29 @@ class SalesTargetResource extends Resource
     public static function getPages(): array
     {
         return [
-            'index'  => Pages\ListSalesTargets::route('/'),
+            'index' => Pages\ListSalesTargets::route('/'),
             'create' => Pages\CreateSalesTarget::route('/create'),
-            'edit'   => Pages\EditSalesTarget::route('/{record}/edit'),
+            'edit' => Pages\EditSalesTarget::route('/{record}/edit'),
         ];
     }
 
     public static function canAccess(): bool
     {
-        return auth()->user()?->isOwnerPusat() ?? false;
+        return static::can('viewAny');
     }
 
     public static function canCreate(): bool
     {
-        return auth()->user()?->isOwnerPusat() ?? false;
+        return static::can('create');
     }
 
     public static function canEdit(Model $record): bool
     {
-        return auth()->user()?->isOwnerPusat() ?? false;
+        return static::can('update', $record);
     }
 
     public static function canDelete(Model $record): bool
     {
-        return auth()->user()?->isOwnerPusat() ?? false;
+        return static::can('delete', $record);
     }
 }

@@ -39,21 +39,29 @@ class InvoiceResource extends Resource
     public static function form(Form $form): Form
     {
         $user = auth()->user();
-        $isPusat = $user->isOwnerPusat() || $user->isRegionalLeader();
+        $branchIds = $user?->accessibleBranchIds() ?? [];
+        $branchQuery = Branch::active()->orderBy('name');
+        $user?->applyAccessibleBranchScope($branchQuery, 'branches.id');
+        $branchOptions = $branchQuery->pluck('name', 'id');
+        $canChooseBranch = $user?->canAccessAllBranches() || count($branchIds) > 1;
+        $defaultBranchId = $user?->branch_id !== null && in_array((int) $user->branch_id, $branchIds, true)
+            ? $user->branch_id
+            : ($branchIds[0] ?? null);
+        $defaultBranchId = $user?->canAccessAllBranches() ? null : $defaultBranchId;
 
         return $form->schema([
             Forms\Components\Section::make('Invoice Details')
                 ->schema([
                     Forms\Components\Select::make('branch_id')
                         ->label('Branch')
-                        ->options(Branch::active()->orderBy('name')->pluck('name', 'id'))
+                        ->options($branchOptions)
                         ->searchable()
                         ->required()
-                        ->disabled(fn() => ! $isPusat)
+                        ->disabled(! $canChooseBranch)
                         ->dehydrated()
-                        ->default(fn() => $isPusat ? null : $user->branch_id)
+                        ->default($defaultBranchId)
                         ->live()
-                        ->afterStateUpdated(fn(Forms\Get $get, Forms\Set $set) => LpgPriceFormState::sync($get, $set, 'unit_price'))
+                        ->afterStateUpdated(fn (Forms\Get $get, Forms\Set $set) => LpgPriceFormState::sync($get, $set, 'unit_price'))
                         ->columnSpan(1),
 
                     // Allocated server-side in handleRecordCreation() — the old
@@ -72,52 +80,50 @@ class InvoiceResource extends Resource
                         ->label('Reference Type')
                         ->options([
                             'customer' => 'Customer',
-                            'branch'   => 'Branch',
+                            'branch' => 'Branch',
                         ])
-                        ->default(fn() => $isPusat ? 'branch' : 'customer')
+                        ->default(fn () => $canChooseBranch ? 'branch' : 'customer')
                         ->required()
                         ->live()
-                        ->visible(fn() => $isPusat)
-                        ->afterStateUpdated(fn(Forms\Get $get, Forms\Set $set) => LpgPriceFormState::sync($get, $set, 'unit_price', false, true))
+                        ->visible(fn () => $canChooseBranch)
+                        ->afterStateUpdated(fn (Forms\Get $get, Forms\Set $set) => LpgPriceFormState::sync($get, $set, 'unit_price', false, true))
                         ->columnSpan(1),
 
                     Forms\Components\Select::make('reference_id')
                         ->label('Customer / Branch')
-                        ->options(function (Forms\Get $get) use ($user, $isPusat) {
-                            $type = $get('reference_type') ?? ($isPusat ? 'branch' : 'customer');
+                        ->options(function (Forms\Get $get) use ($user, $canChooseBranch) {
+                            $type = $get('reference_type') ?? ($canChooseBranch ? 'branch' : 'customer');
 
                             if ($type === 'branch') {
-                                return Branch::active()
-                                    ->where('id', '!=', $user->branch_id)
+                                $query = Branch::active()->where('id', '!=', $user?->branch_id);
+                                $user?->applyAccessibleBranchScope($query, 'branches.id');
+
+                                return $query
                                     ->orderBy('name')
                                     ->pluck('name', 'id');
                             }
 
                             $query = Customer::active()->orderBy('name');
 
-                            if (! $isPusat) {
-                                $query->where('branch_id', $user->branch_id);
-                            }
-
                             return $query->pluck('name', 'id');
                         })
                         ->searchable()
                         ->required()
                         ->live()
-                        ->afterStateUpdated(fn(Forms\Get $get, Forms\Set $set) => LpgPriceFormState::sync($get, $set, 'unit_price', false, true))
+                        ->afterStateUpdated(fn (Forms\Get $get, Forms\Set $set) => LpgPriceFormState::sync($get, $set, 'unit_price', false, true))
                         ->columnSpan(1),
 
                     Forms\Components\Select::make('cylinder_type')
                         ->label('Cylinder Type')
                         ->options([
-                            '3kg'   => '3 kg',
+                            '3kg' => '3 kg',
                             '5.5kg' => '5.5 kg',
-                            '12kg'  => '12 kg',
-                            '50kg'  => '50 kg',
+                            '12kg' => '12 kg',
+                            '50kg' => '50 kg',
                         ])
                         ->required()
                         ->live()
-                        ->afterStateUpdated(fn(Forms\Get $get, Forms\Set $set) => LpgPriceFormState::sync($get, $set, 'unit_price', false, true))
+                        ->afterStateUpdated(fn (Forms\Get $get, Forms\Set $set) => LpgPriceFormState::sync($get, $set, 'unit_price', false, true))
                         ->columnSpan(1),
 
                     Forms\Components\TextInput::make('quantity')
@@ -143,14 +149,14 @@ class InvoiceResource extends Resource
 
                     Forms\Components\Placeholder::make('lpg_price_reference')
                         ->label('LPG Price Reference')
-                        ->content(fn(Forms\Get $get) => $get('lpg_price_id')
-                            ? 'LPG Price #' . $get('lpg_price_id')
+                        ->content(fn (Forms\Get $get) => $get('lpg_price_id')
+                            ? 'LPG Price #'.$get('lpg_price_id')
                             : 'Select branch and cylinder type to load the effective LPG Price.')
                         ->columnSpan(1),
 
                     Forms\Components\Placeholder::make('total_amount_preview')
                         ->label('Total Amount')
-                        ->content(fn(Forms\Get $get) => 'Rp ' . number_format(
+                        ->content(fn (Forms\Get $get) => 'Rp '.number_format(
                             (int) ($get('quantity') ?? 0) * (float) ($get('unit_price') ?? 0),
                             0,
                             ',',
@@ -163,7 +169,7 @@ class InvoiceResource extends Resource
                         ->required()
                         ->default(today())
                         ->live()
-                        ->afterStateUpdated(fn(Forms\Get $get, Forms\Set $set) => LpgPriceFormState::sync($get, $set, 'unit_price', false, true))
+                        ->afterStateUpdated(fn (Forms\Get $get, Forms\Set $set) => LpgPriceFormState::sync($get, $set, 'unit_price', false, true))
                         ->columnSpan(1),
 
                     Forms\Components\DatePicker::make('due_date')
@@ -174,9 +180,9 @@ class InvoiceResource extends Resource
 
                     Forms\Components\Select::make('status')
                         ->options([
-                            'draft'     => 'Draft',
-                            'issued'    => 'Issued',
-                            'paid'      => 'Paid',
+                            'draft' => 'Draft',
+                            'issued' => 'Issued',
+                            'paid' => 'Paid',
                             'cancelled' => 'Cancelled',
                         ])
                         ->required()
@@ -207,17 +213,8 @@ class InvoiceResource extends Resource
 
     public static function table(Table $table): Table
     {
-        $user = auth()->user();
-        $isPusat = $user->isOwnerPusat() || $user->isRegionalLeader();
-
         return $table
-            ->modifyQueryUsing(function ($query) use ($user, $isPusat) {
-                $query->with('lpgPrice');
-
-                if (! $isPusat && $user->branch_id) {
-                    $query->where('branch_id', $user->branch_id);
-                }
-            })
+            ->modifyQueryUsing(fn ($query) => $query->with('lpgPrice'))
             ->columns([
                 Tables\Columns\TextColumn::make('invoice_number')
                     ->label('Invoice #')
@@ -235,7 +232,7 @@ class InvoiceResource extends Resource
                     ->label('Customer / Branch')
                     ->placeholder('—')
                     ->searchable()
-                    ->getStateUsing(fn(Invoice $record) => $record->reference_name ?? '—'),
+                    ->getStateUsing(fn (Invoice $record) => $record->reference_name ?? '—'),
 
                 Tables\Columns\TextColumn::make('cylinder_type')
                     ->label('Type')
@@ -255,32 +252,32 @@ class InvoiceResource extends Resource
 
                 Tables\Columns\TextColumn::make('quantity')
                     ->label('Qty')
-                    ->formatStateUsing(fn($state) => number_format($state) . ' pcs'),
+                    ->formatStateUsing(fn ($state) => number_format($state).' pcs'),
 
                 Tables\Columns\TextColumn::make('total_amount')
                     ->label('Total')
-                    ->formatStateUsing(fn($state) => 'Rp ' . number_format($state, 0, ',', '.')),
+                    ->formatStateUsing(fn ($state) => 'Rp '.number_format($state, 0, ',', '.')),
 
                 Tables\Columns\TextColumn::make('paid_amount')
                     ->label('Paid')
-                    ->formatStateUsing(fn($state) => 'Rp ' . number_format($state, 0, ',', '.')),
+                    ->formatStateUsing(fn ($state) => 'Rp '.number_format($state, 0, ',', '.')),
 
                 Tables\Columns\TextColumn::make('balance')
                     ->label('Balance')
-                    ->getStateUsing(fn(Invoice $record): string => 'Rp ' . number_format($record->balance, 0, ',', '.'))
-                    ->color(fn(Invoice $record): string => $record->balance > 0 ? 'danger' : 'success'),
+                    ->getStateUsing(fn (Invoice $record): string => 'Rp '.number_format($record->balance, 0, ',', '.'))
+                    ->color(fn (Invoice $record): string => $record->balance > 0 ? 'danger' : 'success'),
 
                 Tables\Columns\TextColumn::make('status')
                     ->label('Status')
                     ->badge()
-                    ->color(fn(string $state): string => match ($state) {
-                        'draft'     => 'gray',
-                        'issued'    => 'info',
-                        'partial'   => 'warning',
-                        'paid'      => 'success',
-                        'overdue'   => 'danger',
+                    ->color(fn (string $state): string => match ($state) {
+                        'draft' => 'gray',
+                        'issued' => 'info',
+                        'partial' => 'warning',
+                        'paid' => 'success',
+                        'overdue' => 'danger',
                         'cancelled' => 'gray',
-                        default     => 'gray',
+                        default => 'gray',
                     }),
 
                 Tables\Columns\TextColumn::make('due_date')
@@ -291,20 +288,20 @@ class InvoiceResource extends Resource
             ->filters([
                 Tables\Filters\SelectFilter::make('status')
                     ->options([
-                        'draft'     => 'Draft',
-                        'issued'    => 'Issued',
-                        'partial'   => 'Partial',
-                        'paid'      => 'Paid',
-                        'overdue'   => 'Overdue',
+                        'draft' => 'Draft',
+                        'issued' => 'Issued',
+                        'partial' => 'Partial',
+                        'paid' => 'Paid',
+                        'overdue' => 'Overdue',
                         'cancelled' => 'Cancelled',
                     ]),
 
                 Tables\Filters\SelectFilter::make('cylinder_type')
                     ->options([
-                        '3kg'   => '3 kg',
+                        '3kg' => '3 kg',
                         '5.5kg' => '5.5 kg',
-                        '12kg'  => '12 kg',
-                        '50kg'  => '50 kg',
+                        '12kg' => '12 kg',
+                        '50kg' => '50 kg',
                     ]),
             ])
             ->actions([
@@ -312,7 +309,12 @@ class InvoiceResource extends Resource
                     ->label('Record Payment')
                     ->icon('heroicon-o-currency-dollar')
                     ->color('success')
-                    ->visible(fn(Invoice $record) => in_array($record->status, ['issued', 'partial', 'overdue']))
+                    ->visible(fn (Invoice $record) => auth()->user()?->hasPermission('invoices.pay') &&
+                        in_array($record->status, ['issued', 'partial', 'overdue'])
+                    )
+                    ->authorize(fn (Invoice $record) => auth()->user()?->hasPermission('invoices.pay') &&
+                        auth()->user()?->canAccessModelRecord($record, 'update')
+                    )
                     ->form([
                         Forms\Components\TextInput::make('payment_amount')
                             ->label('Payment Amount')
@@ -329,18 +331,25 @@ class InvoiceResource extends Resource
                     ->requiresConfirmation(),
 
                 Tables\Actions\EditAction::make()
-                    ->visible(fn(Invoice $record) => $record->status === 'draft'),
+                    ->visible(fn (Invoice $record) => $record->status === 'draft' && static::can('update', $record))
+                    ->authorize(fn (Invoice $record) => $record->status === 'draft' && static::can('update', $record)),
 
                 Tables\Actions\Action::make('issue')
                     ->label('Issue')
                     ->icon('heroicon-o-check-circle')
                     ->color('success')
-                    ->visible(fn(Invoice $record) => $record->status === 'draft')
-                    ->action(fn(Invoice $record) => $record->update(['status' => 'issued']))
+                    ->visible(fn (Invoice $record) => $record->status === 'draft' && auth()->user()?->hasPermission('invoices.issue')
+                    )
+                    ->authorize(fn (Invoice $record) => $record->status === 'draft' &&
+                        auth()->user()?->hasPermission('invoices.issue') &&
+                        auth()->user()?->canAccessModelRecord($record, 'update')
+                    )
+                    ->action(fn (Invoice $record) => $record->update(['status' => 'issued']))
                     ->requiresConfirmation(),
 
                 Tables\Actions\DeleteAction::make()
-                    ->visible(fn(Invoice $record) => $record->status === 'draft'),
+                    ->visible(fn (Invoice $record) => $record->status === 'draft' && static::can('delete', $record))
+                    ->authorize(fn (Invoice $record) => $record->status === 'draft' && static::can('delete', $record)),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
@@ -358,24 +367,24 @@ class InvoiceResource extends Resource
     public static function getPages(): array
     {
         return [
-            'index'  => Pages\ListInvoices::route('/'),
+            'index' => Pages\ListInvoices::route('/'),
             'create' => Pages\CreateInvoice::route('/create'),
-            'edit'   => Pages\EditInvoice::route('/{record}/edit'),
+            'edit' => Pages\EditInvoice::route('/{record}/edit'),
         ];
     }
 
     public static function canAccess(): bool
     {
-        return auth()->user()?->canViewFinance() ?? false;
+        return auth()->user()?->hasPermission('invoices.view') ?? false;
     }
 
     public static function shouldRegisterNavigation(): bool
     {
-        return auth()->user()?->isOwnerPusat() ?? false;
+        return auth()->user()?->hasPermission('invoices.view') ?? false;
     }
 
     public static function canCreate(): bool
     {
-        return auth()->user()?->canViewFinance() ?? false;
+        return auth()->user()?->hasPermission('invoices.create') ?? false;
     }
 }

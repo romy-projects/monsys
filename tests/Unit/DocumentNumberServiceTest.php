@@ -15,8 +15,11 @@ class DocumentNumberServiceTest extends TestCase
     use RefreshDatabase;
 
     private DocumentNumberService $service;
+
     private Branch $mainBranch;
+
     private Branch $otherBranch;
+
     private User $user;
 
     protected function setUp(): void
@@ -26,43 +29,43 @@ class DocumentNumberServiceTest extends TestCase
         $this->service = app(DocumentNumberService::class);
 
         $this->mainBranch = Branch::create([
-            'code'   => 'PST',
-            'name'   => 'SUM Pusat',
-            'city'   => 'Jakarta',
+            'code' => 'PST',
+            'name' => 'SUM Pusat',
+            'city' => 'Jakarta',
             'status' => 'active',
         ]);
 
         $this->otherBranch = Branch::create([
-            'code'   => 'BDG',
-            'name'   => 'SUM Bandung',
-            'city'   => 'Bandung',
+            'code' => 'BDG',
+            'name' => 'SUM Bandung',
+            'city' => 'Bandung',
             'status' => 'active',
         ]);
 
         $this->user = User::create([
-            'name'      => 'Test User',
-            'email'     => 'test@test.com',
-            'password'  => bcrypt('password'),
-            'role'      => 'owner_pusat',
+            'name' => 'Test User',
+            'email' => 'test@test.com',
+            'password' => bcrypt('password'),
+            'role' => 'owner_pusat',
             'branch_id' => $this->mainBranch->id,
-            'status'    => 'active',
+            'status' => 'active',
         ]);
     }
 
     private function makeOrder(string $doNumber, string $documentType = 'po'): DeliveryOrder
     {
         return DeliveryOrder::create([
-            'do_number'          => $doNumber,
-            'document_type'      => $documentType,
-            'counterparty_type'  => $documentType === 'po' ? 'branch' : 'pertamina',
-            'counterparty_name'  => $documentType === 'po' ? 'SUM Bandung' : 'Pertamina',
-            'origin_branch_id'   => $this->mainBranch->id,
+            'do_number' => $doNumber,
+            'document_type' => $documentType,
+            'counterparty_type' => $documentType === 'po' ? 'branch' : 'pertamina',
+            'counterparty_name' => $documentType === 'po' ? 'SUM Bandung' : 'Pertamina',
+            'origin_branch_id' => $this->mainBranch->id,
             'destination_branch_id' => $documentType === 'po' ? $this->otherBranch->id : null,
-            'cylinder_type'      => '3kg',
-            'quantity_ordered'   => 100,
-            'order_date'         => '2026-08-10',
-            'requested_by'       => $this->user->id,
-            'status'             => 'draft',
+            'cylinder_type' => '3kg',
+            'quantity_ordered' => 100,
+            'order_date' => '2026-08-10',
+            'requested_by' => $this->user->id,
+            'status' => 'draft',
         ]);
     }
 
@@ -74,7 +77,7 @@ class DocumentNumberServiceTest extends TestCase
         foreach (['so', 'do', 'lo', 'po', 'inv'] as $type) {
             $this->assertDatabaseHas('document_sequences', [
                 'document_type' => $type,
-                'year'          => $year,
+                'year' => $year,
             ]);
         }
     }

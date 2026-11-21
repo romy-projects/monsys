@@ -7,7 +7,6 @@ use App\Http\Traits\ApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Storage;
 
 class ScanController extends Controller
 {
@@ -23,7 +22,7 @@ class ScanController extends Controller
     public function scan(Request $request): JsonResponse
     {
         $request->validate([
-            'image'         => ['required', 'file', 'mimes:jpeg,jpg,png,webp', 'max:10240'],
+            'image' => ['required', 'file', 'mimes:jpeg,jpg,png,webp', 'max:10240'],
             'document_type' => ['required', 'in:do,shipment,bast,stock_form'],
         ]);
 
@@ -33,33 +32,33 @@ class ScanController extends Controller
         }
 
         $documentType = $request->input('document_type');
-        $prompt       = self::PROMPTS[$documentType];
+        $prompt = self::PROMPTS[$documentType];
 
-        $file     = $request->file('image');
+        $file = $request->file('image');
         $mimeType = $file->getMimeType();
-        $base64   = base64_encode(file_get_contents($file->getRealPath()));
+        $base64 = base64_encode(file_get_contents($file->getRealPath()));
 
         $response = Http::withHeaders([
-            'x-api-key'         => $apiKey,
+            'x-api-key' => $apiKey,
             'anthropic-version' => '2023-06-01',
-            'content-type'      => 'application/json',
+            'content-type' => 'application/json',
         ])->timeout(30)->post('https://api.anthropic.com/v1/messages', [
-            'model'      => 'claude-opus-4-7',
+            'model' => 'claude-opus-4-7',
             'max_tokens' => 1024,
-            'messages'   => [[
-                'role'    => 'user',
+            'messages' => [[
+                'role' => 'user',
                 'content' => [
                     [
-                        'type'   => 'image',
+                        'type' => 'image',
                         'source' => [
-                            'type'       => 'base64',
+                            'type' => 'base64',
                             'media_type' => $mimeType,
-                            'data'       => $base64,
+                            'data' => $base64,
                         ],
                     ],
                     [
                         'type' => 'text',
-                        'text' => $prompt . ' Return ONLY valid JSON, no markdown fences.',
+                        'text' => $prompt.' Return ONLY valid JSON, no markdown fences.',
                     ],
                 ],
             ]],
@@ -69,7 +68,7 @@ class ScanController extends Controller
             return $this->error('Document scan service error. Please try again or fill manually.', 502);
         }
 
-        $raw  = $response->json('content.0.text', '{}');
+        $raw = $response->json('content.0.text', '{}');
         $data = json_decode($raw, true);
 
         if (! is_array($data)) {
@@ -77,7 +76,7 @@ class ScanController extends Controller
         }
 
         // Separate fields from confidence scores
-        $fields     = collect($data)->reject(fn ($v, $k) => str_ends_with($k, '_confidence'))->all();
+        $fields = collect($data)->reject(fn ($v, $k) => str_ends_with($k, '_confidence'))->all();
         $confidence = collect($data)->filter(fn ($v, $k) => str_ends_with($k, '_confidence'))
             ->mapWithKeys(fn ($v, $k) => [str_replace('_confidence', '', $k) => $v])->all();
 
@@ -85,15 +84,15 @@ class ScanController extends Controller
         $lowConfidence = collect($confidence)->filter(fn ($c) => $c < 0.5)->keys()->values()->all();
 
         // Store image for audit trail
-        $path = $file->store('scans/' . now()->format('Y/m'), 'local');
+        $path = $file->store('scans/'.now()->format('Y/m'), 'local');
 
         return $this->success([
-            'document_type'  => $documentType,
-            'fields'         => $fields,
-            'confidence'     => $confidence,
+            'document_type' => $documentType,
+            'fields' => $fields,
+            'confidence' => $confidence,
             'low_confidence' => $lowConfidence,
-            'scan_image_path'=> $path,
-            'can_auto_fill'  => count($lowConfidence) === 0,
+            'scan_image_path' => $path,
+            'can_auto_fill' => count($lowConfidence) === 0,
         ]);
     }
 }

@@ -14,9 +14,7 @@ class CreateCylinderCirculation extends CreateRecord
         abort_unless(CylinderCirculationResource::canCreate(), 403);
 
         $user = auth()->user();
-        if (! $user->isOwnerPusat() && ! $user->isRegionalLeader()) {
-            $data['branch_id'] = $user->branch_id;
-        }
+        abort_unless($user->canAccessBranch((int) ($data['branch_id'] ?? 0)), 403);
 
         $data['created_by'] = auth()->id();
 

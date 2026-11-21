@@ -14,6 +14,8 @@ use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Database\Eloquent\Model;
 
 /**
  * Expedition Loading Order (LO Expedisi) — BALI-11 / BALI-12 / BALI-13.
@@ -36,6 +38,14 @@ class ExpeditionLoadingOrderResource extends Resource
 
     protected static ?string $slug = 'expedition-loading-orders';
 
+    public static function getEloquentQuery(): Builder
+    {
+        $query = parent::getEloquentQuery()->expeditionLoadingOrders();
+        $user = auth()->user();
+
+        return $user === null ? $query->whereRaw('1 = 0') : $query->accessibleTo($user);
+    }
+
     public static function getNavigationLabel(): string
     {
         return __('nav.item.lo_expedition');
@@ -54,6 +64,9 @@ class ExpeditionLoadingOrderResource extends Resource
     public static function form(Form $form): Form
     {
         $mainBranch = Branch::mainBranch()->first();
+        $user = auth()->user();
+        $branchQuery = Branch::active()->orderBy('name');
+        $user?->applyAccessibleBranchScope($branchQuery, 'branches.id');
 
         return $form->schema([
             Forms\Components\Section::make('LO Expedisi Details')
@@ -76,6 +89,7 @@ class ExpeditionLoadingOrderResource extends Resource
                     Forms\Components\Select::make('transportir_lo_number')
                         ->label('Transportir LO / No. LO Transportir')
                         ->options(fn () => DeliveryOrder::transportirLoadingOrders()
+                            ->accessibleTo($user)
                             ->orderByDesc('order_date')
                             ->limit(500)
                             ->pluck('do_number', 'do_number'))
@@ -86,7 +100,7 @@ class ExpeditionLoadingOrderResource extends Resource
 
                     Forms\Components\Select::make('destination_branch_id')
                         ->label('Destination Branch / Pangkalan Tujuan')
-                        ->options(fn () => Branch::active()->orderBy('name')->pluck('name', 'id'))
+                        ->options($branchQuery->pluck('name', 'id'))
                         ->searchable()
                         ->required()
                         ->columnSpan(1),
@@ -94,10 +108,10 @@ class ExpeditionLoadingOrderResource extends Resource
                     Forms\Components\Select::make('cylinder_type')
                         ->label('Cylinder Type / Jenis Tabung')
                         ->options([
-                            '3kg'   => '3 kg',
+                            '3kg' => '3 kg',
                             '5.5kg' => '5.5 kg',
-                            '12kg'  => '12 kg',
-                            '50kg'  => '50 kg',
+                            '12kg' => '12 kg',
+                            '50kg' => '50 kg',
                         ])
                         ->required()
                         ->columnSpan(1),
@@ -237,35 +251,35 @@ class ExpeditionLoadingOrderResource extends Resource
 
                 Tables\Columns\TextColumn::make('quantity_ordered')
                     ->label('Qty')
-                    ->formatStateUsing(fn ($state) => number_format((int) $state) . ' pcs'),
+                    ->formatStateUsing(fn ($state) => number_format((int) $state).' pcs'),
 
                 Tables\Columns\TextColumn::make('expedition_cost')
                     ->label('Expedition Cost')
-                    ->formatStateUsing(fn ($state) => 'Rp ' . number_format((float) $state, 0, ',', '.'))
+                    ->formatStateUsing(fn ($state) => 'Rp '.number_format((float) $state, 0, ',', '.'))
                     ->alignEnd(),
 
                 Tables\Columns\TextColumn::make('status')
                     ->label('Status')
                     ->badge()
                     ->color(fn (string $state): string => match ($state) {
-                        'draft'            => 'gray',
+                        'draft' => 'gray',
                         'pending_approval' => 'warning',
-                        'approved'         => 'info',
-                        'in_transit'       => 'primary',
-                        'on_transportir'   => 'purple',
-                        'delivered'        => 'success',
-                        'cancelled'        => 'danger',
-                        default            => 'gray',
+                        'approved' => 'info',
+                        'in_transit' => 'primary',
+                        'on_transportir' => 'purple',
+                        'delivered' => 'success',
+                        'cancelled' => 'danger',
+                        default => 'gray',
                     })
                     ->formatStateUsing(fn (string $state) => match ($state) {
-                        'draft'            => 'Draft',
+                        'draft' => 'Draft',
                         'pending_approval' => 'Pending Approval',
-                        'approved'         => 'Approved',
-                        'in_transit'       => 'In Transit',
-                        'on_transportir'   => 'On Transportir',
-                        'delivered'        => 'Delivered',
-                        'cancelled'        => 'Cancelled',
-                        default            => $state,
+                        'approved' => 'Approved',
+                        'in_transit' => 'In Transit',
+                        'on_transportir' => 'On Transportir',
+                        'delivered' => 'Delivered',
+                        'cancelled' => 'Cancelled',
+                        default => $state,
                     }),
 
                 Tables\Columns\TextColumn::make('order_date')
@@ -276,20 +290,20 @@ class ExpeditionLoadingOrderResource extends Resource
             ->filters([
                 Tables\Filters\SelectFilter::make('status')
                     ->options([
-                        'draft'            => 'Draft',
+                        'draft' => 'Draft',
                         'pending_approval' => 'Pending Approval',
-                        'approved'         => 'Approved',
-                        'in_transit'       => 'In Transit',
-                        'delivered'        => 'Delivered',
-                        'cancelled'        => 'Cancelled',
+                        'approved' => 'Approved',
+                        'in_transit' => 'In Transit',
+                        'delivered' => 'Delivered',
+                        'cancelled' => 'Cancelled',
                     ]),
 
                 Tables\Filters\SelectFilter::make('cylinder_type')
                     ->options([
-                        '3kg'   => '3 kg',
+                        '3kg' => '3 kg',
                         '5.5kg' => '5.5 kg',
-                        '12kg'  => '12 kg',
-                        '50kg'  => '50 kg',
+                        '12kg' => '12 kg',
+                        '50kg' => '50 kg',
                     ]),
             ])
             ->actions([
@@ -297,7 +311,14 @@ class ExpeditionLoadingOrderResource extends Resource
                     ->label('Submit')
                     ->icon('heroicon-o-paper-airplane')
                     ->color('warning')
-                    ->visible(fn (DeliveryOrder $record) => $record->status === 'draft')
+                    ->visible(fn (DeliveryOrder $record) => $record->status === 'draft' &&
+                        auth()->user()?->hasPermission('loading_orders.submit') &&
+                        auth()->user()?->canAccessModelRecord($record, 'update')
+                    )
+                    ->authorize(fn (DeliveryOrder $record) => $record->status === 'draft' &&
+                        auth()->user()?->hasPermission('loading_orders.submit') &&
+                        auth()->user()?->canAccessModelRecord($record, 'update')
+                    )
                     ->action(fn (DeliveryOrder $record) => $record->update(['status' => 'pending_approval']))
                     ->requiresConfirmation(),
 
@@ -306,9 +327,14 @@ class ExpeditionLoadingOrderResource extends Resource
                     ->icon('heroicon-o-check-circle')
                     ->color('success')
                     ->visible(fn (DeliveryOrder $record) => $record->status === 'pending_approval'
-                        && auth()->user()?->canApproveOrders())
+                        && auth()->user()?->hasPermission('loading_orders.approve')
+                        && auth()->user()?->canAccessModelRecord($record, 'update'))
+                    ->authorize(fn (DeliveryOrder $record) => $record->status === 'pending_approval' &&
+                        auth()->user()?->hasPermission('loading_orders.approve') &&
+                        auth()->user()?->canAccessModelRecord($record, 'update')
+                    )
                     ->action(fn (DeliveryOrder $record) => $record->update([
-                        'status'      => 'approved',
+                        'status' => 'approved',
                         'approved_by' => auth()->id(),
                         'approved_at' => now(),
                     ]))
@@ -319,7 +345,12 @@ class ExpeditionLoadingOrderResource extends Resource
                     ->icon('heroicon-o-archive-box-arrow-down')
                     ->color('info')
                     ->visible(fn (DeliveryOrder $record) => $record->status === 'approved'
-                        && auth()->user()?->canApproveOrders())
+                        && auth()->user()?->hasPermission('loading_orders.mark_loaded')
+                        && auth()->user()?->canAccessModelRecord($record, 'update'))
+                    ->authorize(fn (DeliveryOrder $record) => $record->status === 'approved' &&
+                        auth()->user()?->hasPermission('loading_orders.mark_loaded') &&
+                        auth()->user()?->canAccessModelRecord($record, 'update')
+                    )
                     ->form([
                         Forms\Components\DatePicker::make('loading_date')
                             ->label('Loading Date')
@@ -327,9 +358,9 @@ class ExpeditionLoadingOrderResource extends Resource
                             ->default(today()),
                     ])
                     ->action(fn (DeliveryOrder $record, array $data) => $record->update([
-                        'status'       => 'in_transit',
+                        'status' => 'in_transit',
                         'loading_date' => $data['loading_date'],
-                        'loaded_by'    => auth()->id(),
+                        'loaded_by' => auth()->id(),
                     ]))
                     ->requiresConfirmation(),
 
@@ -338,27 +369,55 @@ class ExpeditionLoadingOrderResource extends Resource
                     ->icon('heroicon-o-x-circle')
                     ->color('danger')
                     ->visible(fn (DeliveryOrder $record) => ! in_array($record->status, ['delivered', 'cancelled'], true)
-                        && auth()->user()?->canApproveOrders())
+                        && auth()->user()?->hasPermission('loading_orders.cancel')
+                        && auth()->user()?->canAccessModelRecord($record, 'update'))
+                    ->authorize(fn (DeliveryOrder $record) => ! in_array($record->status, ['delivered', 'cancelled'], true) &&
+                        auth()->user()?->hasPermission('loading_orders.cancel') &&
+                        auth()->user()?->canAccessModelRecord($record, 'update')
+                    )
                     ->action(fn (DeliveryOrder $record) => $record->update(['status' => 'cancelled']))
                     ->requiresConfirmation(),
 
                 Tables\Actions\EditAction::make()
-                    ->visible(fn (DeliveryOrder $record) => $record->status === 'draft'),
+                    ->visible(fn (DeliveryOrder $record) => static::canEdit($record))
+                    ->authorize(fn (DeliveryOrder $record) => static::canEdit($record)),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make(),
+                    Tables\Actions\DeleteBulkAction::make()
+                        ->authorize(fn () => auth()->user()?->hasPermission('loading_orders.delete'))
+                        ->using(function (Collection $records): void {
+                            foreach ($records as $record) {
+                                abort_unless(static::canDelete($record), 403);
+                                $record->delete();
+                            }
+                        }),
                 ]),
             ])
             ->defaultSort('order_date', 'desc');
     }
 
-    /** Only Pusat/Regional can create Expedition LOs. */
     public static function canCreate(): bool
     {
-        $user = auth()->user();
+        return auth()->user()?->hasPermission('loading_orders.create') ?? false;
+    }
 
-        return $user->isOwnerPusat() || $user->isRegionalLeader();
+    public static function canEdit(Model $record): bool
+    {
+        return $record->document_type === 'lo'
+            && $record->isExpeditionLoadingOrder()
+            && $record->status === 'draft'
+            && auth()->user()?->hasPermission('loading_orders.update')
+            && auth()->user()?->canAccessModelRecord($record, 'update');
+    }
+
+    public static function canDelete(Model $record): bool
+    {
+        return $record->document_type === 'lo'
+            && $record->isExpeditionLoadingOrder()
+            && $record->status === 'draft'
+            && auth()->user()?->hasPermission('loading_orders.delete')
+            && auth()->user()?->canAccessModelRecord($record, 'delete');
     }
 
     public static function getRelations(): array
@@ -369,19 +428,14 @@ class ExpeditionLoadingOrderResource extends Resource
     public static function getPages(): array
     {
         return [
-            'index'  => Pages\ListExpeditionLoadingOrders::route('/'),
+            'index' => Pages\ListExpeditionLoadingOrders::route('/'),
             'create' => Pages\CreateExpeditionLoadingOrder::route('/create'),
-            'edit'   => Pages\EditExpeditionLoadingOrder::route('/{record}/edit'),
+            'edit' => Pages\EditExpeditionLoadingOrder::route('/{record}/edit'),
         ];
     }
 
     public static function canAccess(): bool
     {
-        $user = auth()->user();
-
-        if (! $user) return false;
-
-        return $user->canAccessPanel(app(\Filament\Panel::class))
-            && ($user->isOwnerPusat() || $user->isRegionalLeader());
+        return auth()->user()?->hasPermission('loading_orders.view') ?? false;
     }
 }

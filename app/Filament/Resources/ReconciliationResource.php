@@ -136,7 +136,7 @@ class ReconciliationResource extends Resource
                         'case_1' => 'warning',
                         'case_2' => 'danger',
                         'case_3' => 'info',
-                        default  => 'success',
+                        default => 'success',
                     }),
 
                 Tables\Columns\TextColumn::make('settlements_count')
@@ -159,21 +159,26 @@ class ReconciliationResource extends Resource
                     ->label('Discrepancy')
                     ->options([
                         'balanced' => 'Balanced',
-                        'case_1'   => 'Case 1 — Unredeemed PO',
-                        'case_2'   => 'Case 2 — Short Delivery',
-                        'case_3'   => 'Case 3 — Over Delivery',
+                        'case_1' => 'Case 1 — Unredeemed PO',
+                        'case_2' => 'Case 2 — Short Delivery',
+                        'case_3' => 'Case 3 — Over Delivery',
                     ]),
 
                 Tables\Filters\SelectFilter::make('status')
                     ->options([
-                        'open'    => 'Open',
+                        'open' => 'Open',
                         'settled' => 'Settled',
                     ]),
 
                 Tables\Filters\SelectFilter::make('branch_id')
                     ->label('Branch')
-                    ->options(fn () => Branch::orderBy('name')->pluck('name', 'id'))
-                    ->visible(fn () => auth()->user()?->isOwnerPusat()),
+                    ->options(function () {
+                        $query = Branch::orderBy('name');
+                        auth()->user()?->applyAccessibleBranchScope($query, 'branches.id');
+
+                        return $query->pluck('name', 'id');
+                    })
+                    ->visible(fn () => count(auth()->user()?->accessibleBranchIds() ?? []) > 1),
 
                 // T13-05: explicit lookup by any document number of the PO→SO→LO chain.
                 Tables\Filters\Filter::make('document_number')
@@ -197,7 +202,7 @@ class ReconciliationResource extends Resource
                             ->orWhereHas('loadingOrder', fn (Builder $document) => $document->where('do_number', 'like', "%{$number}%")));
                     })
                     ->indicateUsing(fn (array $data): ?string => filled($data['number'] ?? null)
-                        ? 'Nomor: ' . $data['number']
+                        ? 'Nomor: '.$data['number']
                         : null),
             ])
             ->actions([
@@ -208,22 +213,31 @@ class ReconciliationResource extends Resource
                     ->label('Rekonsiliasi LO')
                     ->icon('heroicon-o-arrow-path')
                     ->color('warning')
-                    ->visible(fn () => auth()->user()?->isOwnerPusat())
+                    ->visible(fn () => auth()->user()?->hasPermission('reconciliations.reconcile') ?? false)
+                    ->authorize(fn () => auth()->user()?->hasPermission('reconciliations.reconcile') ?? false)
                     ->form([
                         Forms\Components\Select::make('loading_order_id')
                             ->label('Delivered Loading Order')
-                            ->options(fn () => DeliveryOrder::loadingOrders()
-                                ->where('status', 'delivered')
-                                ->whereNotNull('po_number')
-                                ->orderByDesc('id')
-                                ->limit(100)
-                                ->pluck('do_number', 'id'))
+                            ->options(function () {
+                                $query = DeliveryOrder::loadingOrders()
+                                    ->accessibleTo(auth()->user())
+                                    ->where('status', 'delivered')
+                                    ->whereNotNull('po_number')
+                                    ->orderByDesc('id')
+                                    ->limit(100);
+
+                                return $query->pluck('do_number', 'id');
+                            })
                             ->searchable()
                             ->required()
                             ->helperText('Reprocessing is safe — an existing reconciliation is updated, never duplicated.'),
                     ])
                     ->action(function (array $data): void {
-                        $lo = DeliveryOrder::find($data['loading_order_id']);
+                        $lo = DeliveryOrder::loadingOrders()
+                            ->accessibleTo(auth()->user())
+                            ->where('status', 'delivered')
+                            ->whereNotNull('po_number')
+                            ->find($data['loading_order_id']);
 
                         $reconciliation = $lo
                             ? app(CylinderReconciliationService::class)->reconcile($lo, auth()->id())
@@ -253,7 +267,7 @@ class ReconciliationResource extends Resource
     {
         return [
             'index' => Pages\ListReconciliations::route('/'),
-            'view'  => Pages\ViewReconciliation::route('/{record}'),
+            'view' => Pages\ViewReconciliation::route('/{record}'),
         ];
     }
 
@@ -271,10 +285,6 @@ class ReconciliationResource extends Resource
      */
     public static function canAccess(): bool
     {
-        $user = auth()->user();
-
-        return $user !== null
-            && $user->canAccessPanel(app(\Filament\Panel::class))
-            && $user->isOwnerPusat();
+        return static::can('viewAny');
     }
 }

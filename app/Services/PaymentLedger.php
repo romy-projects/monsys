@@ -29,12 +29,12 @@ class PaymentLedger
             $amount = $this->guardAmount((float) $receivable->balance, $data['amount'] ?? 0);
 
             $payment = $receivable->payments()->create([
-                'paid_on'      => $data['paid_on'] ?? today()->toDateString(),
-                'amount'       => $amount,
-                'method'       => $data['method'] ?? 'cash',
+                'paid_on' => $data['paid_on'] ?? today()->toDateString(),
+                'amount' => $amount,
+                'method' => $data['method'] ?? 'cash',
                 'reference_no' => $data['reference_no'] ?? null,
-                'notes'        => $data['notes'] ?? null,
-                'created_by'   => $userId,
+                'notes' => $data['notes'] ?? null,
+                'created_by' => $userId,
             ]);
 
             $receivable->syncPaidFromLedger();
@@ -56,12 +56,12 @@ class PaymentLedger
 
             $payment = $payable->payments()->create([
                 'delivery_order_id' => $data['delivery_order_id'] ?? $payable->delivery_order_id,
-                'paid_on'           => $data['paid_on'] ?? today()->toDateString(),
-                'amount'            => $amount,
-                'method'            => $data['method'] ?? 'cash',
-                'reference_no'      => $data['reference_no'] ?? null,
-                'notes'             => $data['notes'] ?? null,
-                'created_by'        => $userId,
+                'paid_on' => $data['paid_on'] ?? today()->toDateString(),
+                'amount' => $amount,
+                'method' => $data['method'] ?? 'cash',
+                'reference_no' => $data['reference_no'] ?? null,
+                'notes' => $data['notes'] ?? null,
+                'created_by' => $userId,
             ]);
 
             $payable->syncPaidFromLedger();
@@ -92,7 +92,7 @@ class PaymentLedger
             return $this->recordPayable($payable, [
                 'amount' => $delta,
                 'method' => 'other',
-                'notes'  => 'Pembayaran via POST /payables/{id}/pay',
+                'notes' => 'Pembayaran via POST /payables/{id}/pay',
             ], $userId);
         });
     }
@@ -136,8 +136,8 @@ class PaymentLedger
 
         if ($amount > $balance) {
             throw ValidationException::withMessages([
-                'amount' => 'Jumlah pembayaran (Rp ' . number_format($amount, 0, ',', '.')
-                    . ') melebihi sisa tagihan (Rp ' . number_format($balance, 0, ',', '.') . ').',
+                'amount' => 'Jumlah pembayaran (Rp '.number_format($amount, 0, ',', '.')
+                    .') melebihi sisa tagihan (Rp '.number_format($balance, 0, ',', '.').').',
             ]);
         }
 

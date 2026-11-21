@@ -21,10 +21,15 @@ class PayablePaymentTest extends TestCase
     use RefreshDatabase;
 
     private Branch $branch;
+
     private User $pusat;
+
     private User $ownerCabang;
+
     private User $staffGudang;
+
     private Transportir $transportir;
+
     private DeliveryOrder $lot;
 
     protected function setUp(): void
@@ -32,70 +37,70 @@ class PayablePaymentTest extends TestCase
         parent::setUp();
 
         $this->branch = Branch::create([
-            'code'   => 'PST',
-            'name'   => 'SUM Pusat',
-            'city'   => 'Jakarta',
+            'code' => 'PST',
+            'name' => 'SUM Pusat',
+            'city' => 'Jakarta',
             'status' => 'active',
         ]);
 
         $this->pusat = User::create([
-            'name'      => 'Pusat User',
-            'email'     => 'pusat@test.com',
-            'password'  => bcrypt('password'),
-            'role'      => 'owner_pusat',
+            'name' => 'Pusat User',
+            'email' => 'pusat@test.com',
+            'password' => bcrypt('password'),
+            'role' => 'owner_pusat',
             'branch_id' => $this->branch->id,
-            'status'    => 'active',
+            'status' => 'active',
         ]);
 
         $this->ownerCabang = User::create([
-            'name'      => 'Cabang User',
-            'email'     => 'cabang@test.com',
-            'password'  => bcrypt('password'),
-            'role'      => 'owner_cabang',
+            'name' => 'Cabang User',
+            'email' => 'cabang@test.com',
+            'password' => bcrypt('password'),
+            'role' => 'owner_cabang',
             'branch_id' => $this->branch->id,
-            'status'    => 'active',
+            'status' => 'active',
         ]);
 
         $this->staffGudang = User::create([
-            'name'      => 'Gudang User',
-            'email'     => 'gudang@test.com',
-            'password'  => bcrypt('password'),
-            'role'      => 'staff_gudang',
+            'name' => 'Gudang User',
+            'email' => 'gudang@test.com',
+            'password' => bcrypt('password'),
+            'role' => 'staff_gudang',
             'branch_id' => $this->branch->id,
-            'status'    => 'active',
+            'status' => 'active',
         ]);
 
         $this->transportir = Transportir::create([
-            'name'   => 'PT Raja Sumber Cahaya',
-            'code'   => 'TRP-01',
+            'name' => 'PT Raja Sumber Cahaya',
+            'code' => 'TRP-01',
             'status' => 'active',
         ]);
 
         $this->lot = DeliveryOrder::create([
-            'do_number'             => 'LOT2026-001',
-            'document_type'         => 'lo',
-            'lo_kind'               => 'transportir',
-            'origin_branch_id'      => $this->branch->id,
+            'do_number' => 'LOT2026-001',
+            'document_type' => 'lo',
+            'lo_kind' => 'transportir',
+            'origin_branch_id' => $this->branch->id,
             'destination_branch_id' => $this->branch->id,
-            'transportir_id'        => $this->transportir->id,
-            'cylinder_type'         => '12kg',
-            'quantity_ordered'      => 100,
-            'order_date'            => today()->toDateString(),
-            'requested_by'          => $this->pusat->id,
-            'status'                => 'draft',
+            'transportir_id' => $this->transportir->id,
+            'cylinder_type' => '12kg',
+            'quantity_ordered' => 100,
+            'order_date' => today()->toDateString(),
+            'requested_by' => $this->pusat->id,
+            'status' => 'draft',
         ]);
     }
 
     private function payable(array $overrides = []): Payable
     {
         return Payable::create(array_merge([
-            'transportir_id'    => $this->transportir->id,
+            'transportir_id' => $this->transportir->id,
             'delivery_order_id' => $this->lot->id,
-            'invoice_number'    => 'TRP-INV-2026-001',
-            'description'       => 'Ongkos angkut 12kg',
-            'amount'            => 1000000,
-            'paid_amount'       => 0,
-            'status'            => 'pending',
+            'invoice_number' => 'TRP-INV-2026-001',
+            'description' => 'Ongkos angkut 12kg',
+            'amount' => 1000000,
+            'paid_amount' => 0,
+            'status' => 'pending',
         ], $overrides));
     }
 
@@ -105,9 +110,9 @@ class PayablePaymentTest extends TestCase
         $payable = $this->payable();
 
         app(PaymentLedger::class)->recordPayable($payable, [
-            'amount'       => 250000,
-            'paid_on'      => '2026-03-01',
-            'method'       => 'giro',
+            'amount' => 250000,
+            'paid_on' => '2026-03-01',
+            'method' => 'giro',
             'reference_no' => 'GIRO-77',
         ], $this->pusat->id);
 
@@ -125,7 +130,7 @@ class PayablePaymentTest extends TestCase
     public function a_full_payment_marks_the_payable_paid_and_stamps_paid_at(): void
     {
         $payable = $this->payable();
-        $ledger  = app(PaymentLedger::class);
+        $ledger = app(PaymentLedger::class);
 
         $ledger->recordPayable($payable, ['amount' => 600000], $this->pusat->id);
         $ledger->recordPayable($payable, ['amount' => 400000], $this->pusat->id);
@@ -172,11 +177,11 @@ class PayablePaymentTest extends TestCase
         $this->actingAs($this->pusat, 'sanctum');
 
         $response = $this->postJson("/api/v1/payables/{$payable->id}/payments", [
-            'amount'       => 300000,
-            'paid_on'      => '2026-04-01',
-            'method'       => 'transfer',
+            'amount' => 300000,
+            'paid_on' => '2026-04-01',
+            'method' => 'transfer',
             'reference_no' => 'TRF-2026-04',
-            'notes'        => 'Termin 1',
+            'notes' => 'Termin 1',
         ]);
 
         $response->assertCreated()
@@ -206,7 +211,7 @@ class PayablePaymentTest extends TestCase
     public function the_history_endpoint_lists_payments_newest_first(): void
     {
         $payable = $this->payable();
-        $ledger  = app(PaymentLedger::class);
+        $ledger = app(PaymentLedger::class);
 
         $ledger->recordPayable($payable, ['amount' => 100000, 'paid_on' => '2026-01-15', 'method' => 'cash'], $this->pusat->id);
         $ledger->recordPayable($payable, ['amount' => 200000, 'paid_on' => '2026-02-15', 'method' => 'giro'], $this->pusat->id);
@@ -263,7 +268,7 @@ class PayablePaymentTest extends TestCase
     public function a_payment_cannot_be_reversed_through_another_payable(): void
     {
         $payable = $this->payable();
-        $other   = $this->payable(['invoice_number' => 'TRP-INV-2026-002']);
+        $other = $this->payable(['invoice_number' => 'TRP-INV-2026-002']);
 
         $payment = app(PaymentLedger::class)->recordPayable($payable, ['amount' => 100000], $this->pusat->id);
 

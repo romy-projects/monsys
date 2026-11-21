@@ -7,6 +7,7 @@ use App\Models\Transportir;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
+use Filament\Support\Enums\FontWeight;
 use Filament\Tables;
 use Filament\Tables\Table;
 
@@ -64,7 +65,7 @@ class TransportirResource extends Resource
                     Forms\Components\Select::make('status')
                         ->label('Status')
                         ->options([
-                            'active'   => '✅ Active',
+                            'active' => '✅ Active',
                             'inactive' => '⛔ Inactive',
                         ])
                         ->default('active')
@@ -89,7 +90,7 @@ class TransportirResource extends Resource
                     ->label('Name')
                     ->searchable()
                     ->sortable()
-                    ->weight(\Filament\Support\Enums\FontWeight::SemiBold),
+                    ->weight(FontWeight::SemiBold),
 
                 Tables\Columns\TextColumn::make('contact_person')
                     ->label('PIC')
@@ -109,12 +110,12 @@ class TransportirResource extends Resource
                 Tables\Columns\TextColumn::make('status')
                     ->label('Status')
                     ->badge()
-                    ->color(fn($state) => $state === 'active' ? 'success' : 'danger'),
+                    ->color(fn ($state) => $state === 'active' ? 'success' : 'danger'),
             ])
             ->filters([
                 Tables\Filters\SelectFilter::make('status')
                     ->options([
-                        'active'   => 'Active',
+                        'active' => 'Active',
                         'inactive' => 'Inactive',
                     ]),
             ])
@@ -137,14 +138,14 @@ class TransportirResource extends Resource
     public static function getPages(): array
     {
         return [
-            'index'  => Pages\ListTransportirs::route('/'),
+            'index' => Pages\ListTransportirs::route('/'),
             'create' => Pages\CreateTransportir::route('/create'),
-            'edit'   => Pages\EditTransportir::route('/{record}/edit'),
+            'edit' => Pages\EditTransportir::route('/{record}/edit'),
         ];
     }
 
     public static function canAccess(): bool
     {
-        return in_array(auth()->user()?->role, ['owner_pusat', 'regional_leader']);
+        return static::can('viewAny');
     }
 }

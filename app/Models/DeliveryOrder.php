@@ -54,11 +54,11 @@ class DeliveryOrder extends Model
     ];
 
     protected $casts = [
-        'order_date'      => 'date',
-        'eta'             => 'date',
-        'loading_date'    => 'date',
-        'received_date'   => 'date',
-        'approved_at'     => 'datetime',
+        'order_date' => 'date',
+        'eta' => 'date',
+        'loading_date' => 'date',
+        'received_date' => 'date',
+        'approved_at' => 'datetime',
         'expedition_cost' => 'decimal:2',
     ];
 
@@ -101,6 +101,21 @@ class DeliveryOrder extends Model
     public function scopePurchaseOrders(Builder $query): Builder
     {
         return $query->where('document_type', 'po');
+    }
+
+    public function scopeAccessibleTo(Builder $query, User $user): Builder
+    {
+        if ($user->canAccessAllBranches()) {
+            return $query;
+        }
+
+        $branchIds = $user->accessibleBranchIds();
+
+        return $query->where(function (Builder $branchQuery) use ($branchIds): void {
+            $branchQuery
+                ->whereIn('origin_branch_id', $branchIds)
+                ->orWhereIn('destination_branch_id', $branchIds);
+        });
     }
 
     // =========================================================

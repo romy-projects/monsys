@@ -2,13 +2,14 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\ScopesToAccessibleBranches;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class StockClose extends Model
 {
-    use HasFactory;
+    use HasFactory, ScopesToAccessibleBranches;
 
     protected $fillable = [
         'branch_id', 'close_date', 'cylinder_type',
@@ -19,12 +20,12 @@ class StockClose extends Model
     ];
 
     protected $casts = [
-        'close_date'   => 'date',
+        'close_date' => 'date',
         'submitted_at' => 'datetime',
-        'verified_at'  => 'datetime',
-        'qty_full'     => 'integer',
-        'qty_empty'    => 'integer',
-        'qty_damaged'  => 'integer',
+        'verified_at' => 'datetime',
+        'qty_full' => 'integer',
+        'qty_empty' => 'integer',
+        'qty_damaged' => 'integer',
     ];
 
     public function branch(): BelongsTo

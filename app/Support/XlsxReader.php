@@ -2,8 +2,8 @@
 
 namespace App\Support;
 
-use ZipArchive;
 use SimpleXMLElement;
+use ZipArchive;
 
 /**
  * Minimal zero-dependency XLSX reader using PHP's built-in ZipArchive + SimpleXMLElement.
@@ -13,10 +13,12 @@ use SimpleXMLElement;
 class XlsxReader
 {
     private const MAX_FILE_SIZE = 2 * 1024 * 1024; // 2 MB
-    private const MAX_ROWS      = 1000;
+
+    private const MAX_ROWS = 1000;
 
     private string $path;
-    private array  $rows = [];
+
+    private array $rows = [];
 
     /**
      * @throws \RuntimeException
@@ -30,6 +32,7 @@ class XlsxReader
 
     /**
      * Get parsed rows (sanitized).
+     *
      * @return array<int, array<int, string|float|int|null>>
      */
     public function rows(): array
@@ -79,7 +82,7 @@ class XlsxReader
 
     private function parse(): void
     {
-        $zip = new ZipArchive();
+        $zip = new ZipArchive;
 
         if ($zip->open($this->path) !== true) {
             throw new \RuntimeException('Cannot open XLSX archive.');
@@ -122,14 +125,14 @@ class XlsxReader
         }
 
         if (count($rows) > self::MAX_ROWS) {
-            throw new \RuntimeException('File exceeds maximum of ' . self::MAX_ROWS . ' rows.');
+            throw new \RuntimeException('File exceeds maximum of '.self::MAX_ROWS.' rows.');
         }
 
         foreach ($rows as $row) {
             $cells = [];
             foreach ($row->c as $cell) {
-                $ref   = (string) $cell['r'];
-                $type  = (string) $cell['t'];
+                $ref = (string) $cell['r'];
+                $type = (string) $cell['t'];
                 $value = (string) $cell->v;
 
                 // Resolve shared string
@@ -155,9 +158,9 @@ class XlsxReader
             $indexed = [];
             foreach ($row->c as $cell) {
                 $colLetter = preg_replace('/[0-9]/', '', (string) $cell['r']);
-                $colIdx    = $this->colIndex($colLetter);
-                $type      = (string) $cell['t'];
-                $value     = (string) $cell->v;
+                $colIdx = $this->colIndex($colLetter);
+                $type = (string) $cell['t'];
+                $value = (string) $cell->v;
 
                 if ($type === 's' && $value !== '') {
                     $idx = (int) $value;
@@ -213,8 +216,8 @@ class XlsxReader
     private function colIndex(string $letter): int
     {
         $letter = strtoupper($letter);
-        $index  = 0;
-        $len    = strlen($letter);
+        $index = 0;
+        $len = strlen($letter);
 
         for ($i = 0; $i < $len; $i++) {
             $index = $index * 26 + (ord($letter[$i]) - 64);

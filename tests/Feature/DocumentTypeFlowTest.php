@@ -2,13 +2,14 @@
 
 namespace Tests\Feature;
 
+use App\Filament\Resources\DeliveryOrderResource;
+use App\Filament\Resources\PurchaseOrderResource;
 use App\Models\Branch;
 use App\Models\DeliveryOrder;
 use App\Models\StockClose;
 use App\Models\User;
-use App\Filament\Resources\DeliveryOrderResource;
-use App\Filament\Resources\PurchaseOrderResource;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
@@ -17,8 +18,11 @@ class DocumentTypeFlowTest extends TestCase
     use RefreshDatabase;
 
     private User $pusat;
+
     private User $branchOwner;
+
     private Branch $mainBranch;
+
     private Branch $otherBranch;
 
     protected function setUp(): void
@@ -26,35 +30,35 @@ class DocumentTypeFlowTest extends TestCase
         parent::setUp();
 
         $this->mainBranch = Branch::create([
-            'code'   => 'PST',
-            'name'   => 'SUM Pusat',
-            'city'   => 'Jakarta',
+            'code' => 'PST',
+            'name' => 'SUM Pusat',
+            'city' => 'Jakarta',
             'status' => 'active',
         ]);
 
         $this->otherBranch = Branch::create([
-            'code'   => 'BDG',
-            'name'   => 'SUM Bandung',
-            'city'   => 'Bandung',
+            'code' => 'BDG',
+            'name' => 'SUM Bandung',
+            'city' => 'Bandung',
             'status' => 'active',
         ]);
 
         $this->pusat = User::create([
-            'name'      => 'Pusat User',
-            'email'     => 'pusat@test.com',
-            'password'  => bcrypt('password'),
-            'role'      => 'owner_pusat',
+            'name' => 'Pusat User',
+            'email' => 'pusat@test.com',
+            'password' => bcrypt('password'),
+            'role' => 'owner_pusat',
             'branch_id' => $this->mainBranch->id,
-            'status'    => 'active',
+            'status' => 'active',
         ]);
 
         $this->branchOwner = User::create([
-            'name'      => 'Branch Owner',
-            'email'     => 'branch@test.com',
-            'password'  => bcrypt('password'),
-            'role'      => 'owner_cabang',
+            'name' => 'Branch Owner',
+            'email' => 'branch@test.com',
+            'password' => bcrypt('password'),
+            'role' => 'owner_cabang',
             'branch_id' => $this->otherBranch->id,
-            'status'    => 'active',
+            'status' => 'active',
         ]);
     }
 
@@ -64,9 +68,9 @@ class DocumentTypeFlowTest extends TestCase
         $this->actingAs($this->pusat, 'sanctum');
 
         $response = $this->postJson('/api/v1/sales-orders', [
-            'do_number'        => 'SO2026-001',
-            'order_date'       => '2026-08-10',
-            'cylinder_type'    => '3kg',
+            'do_number' => 'SO2026-001',
+            'order_date' => '2026-08-10',
+            'cylinder_type' => '3kg',
             'quantity_ordered' => 100,
             'counterparty_name' => 'Pertamina Patra Niaga',
         ]);
@@ -83,9 +87,9 @@ class DocumentTypeFlowTest extends TestCase
         $this->actingAs($this->branchOwner, 'sanctum');
 
         $response = $this->postJson('/api/v1/sales-orders', [
-            'do_number'        => 'SO2026-002',
-            'order_date'       => '2026-08-10',
-            'cylinder_type'    => '3kg',
+            'do_number' => 'SO2026-002',
+            'order_date' => '2026-08-10',
+            'cylinder_type' => '3kg',
             'quantity_ordered' => 100,
         ]);
 
@@ -99,21 +103,21 @@ class DocumentTypeFlowTest extends TestCase
 
         // Golden Rule: must submit stock close before creating PO
         StockClose::create([
-            'branch_id'     => $this->otherBranch->id,
-            'close_date'    => today(),
+            'branch_id' => $this->otherBranch->id,
+            'close_date' => today(),
             'cylinder_type' => '3kg',
-            'qty_full'      => 100,
-            'qty_empty'     => 10,
-            'qty_damaged'   => 0,
-            'submitted_by'  => $this->branchOwner->id,
-            'submitted_at'  => now(),
-            'status'        => 'submitted',
+            'qty_full' => 100,
+            'qty_empty' => 10,
+            'qty_damaged' => 0,
+            'submitted_by' => $this->branchOwner->id,
+            'submitted_at' => now(),
+            'status' => 'submitted',
         ]);
 
         $response = $this->postJson('/api/v1/purchase-orders', [
-            'do_number'        => 'PO2026-001',
-            'order_date'       => '2026-08-10',
-            'cylinder_type'    => '3kg',
+            'do_number' => 'PO2026-001',
+            'order_date' => '2026-08-10',
+            'cylinder_type' => '3kg',
             'quantity_ordered' => 50,
             'destination_branch_id' => $this->mainBranch->id,
         ]);
@@ -138,9 +142,9 @@ class DocumentTypeFlowTest extends TestCase
         $this->actingAs($this->pusat, 'sanctum');
 
         $response = $this->postJson('/api/v1/purchase-orders', [
-            'do_number'        => 'PO2026-002',
-            'order_date'       => '2026-08-10',
-            'cylinder_type'    => '3kg',
+            'do_number' => 'PO2026-002',
+            'order_date' => '2026-08-10',
+            'cylinder_type' => '3kg',
             'quantity_ordered' => 50,
             'destination_branch_id' => $this->otherBranch->id,
         ]);
@@ -177,20 +181,20 @@ class DocumentTypeFlowTest extends TestCase
     public function regional_leader_cannot_create_purchase_orders(): void
     {
         $regionalLeader = User::create([
-            'name'      => 'Regional Leader',
-            'email'     => 'regional@test.com',
-            'password'  => bcrypt('password'),
-            'role'      => 'regional_leader',
+            'name' => 'Regional Leader',
+            'email' => 'regional@test.com',
+            'password' => bcrypt('password'),
+            'role' => 'regional_leader',
             'branch_id' => $this->mainBranch->id,
-            'status'    => 'active',
+            'status' => 'active',
         ]);
 
         $this->actingAs($regionalLeader, 'sanctum');
         $this->assertFalse(PurchaseOrderResource::canCreate());
 
         $response = $this->postJson('/api/v1/purchase-orders', [
-            'order_date'       => '2026-08-10',
-            'cylinder_type'    => '3kg',
+            'order_date' => '2026-08-10',
+            'cylinder_type' => '3kg',
             'quantity_ordered' => 50,
             'destination_branch_id' => $this->otherBranch->id,
         ]);
@@ -203,8 +207,8 @@ class DocumentTypeFlowTest extends TestCase
     {
         $response = $this->actingAs($this->pusat, 'sanctum')
             ->postJson('/api/v1/purchase-orders', [
-                'order_date'       => '2026-08-10',
-                'cylinder_type'    => '3kg',
+                'order_date' => '2026-08-10',
+                'cylinder_type' => '3kg',
                 'quantity_ordered' => 50,
             ]);
 
@@ -232,20 +236,20 @@ class DocumentTypeFlowTest extends TestCase
     public function approved_so_does_not_create_do(): void
     {
         $so = DeliveryOrder::create([
-            'do_number'          => 'SO2026-003',
-            'document_type'      => 'so',
-            'counterparty_type'  => 'pertamina',
-            'counterparty_name'  => 'Pertamina',
-            'origin_branch_id'   => $this->mainBranch->id,
-            'cylinder_type'      => '3kg',
-            'quantity_ordered'   => 100,
-            'order_date'         => '2026-08-10',
-            'requested_by'       => $this->pusat->id,
-            'status'             => 'pending_approval',
+            'do_number' => 'SO2026-003',
+            'document_type' => 'so',
+            'counterparty_type' => 'pertamina',
+            'counterparty_name' => 'Pertamina',
+            'origin_branch_id' => $this->mainBranch->id,
+            'cylinder_type' => '3kg',
+            'quantity_ordered' => 100,
+            'order_date' => '2026-08-10',
+            'requested_by' => $this->pusat->id,
+            'status' => 'pending_approval',
         ]);
 
         $so->update([
-            'status'      => 'approved',
+            'status' => 'approved',
             'approved_by' => $this->pusat->id,
             'approved_at' => now(),
         ]);
@@ -262,21 +266,21 @@ class DocumentTypeFlowTest extends TestCase
     public function approved_po_does_not_create_do(): void
     {
         $po = DeliveryOrder::create([
-            'do_number'          => 'PO2026-003',
-            'document_type'      => 'po',
-            'counterparty_type'  => 'branch',
-            'counterparty_name'  => 'SUM Bandung',
-            'origin_branch_id'   => $this->mainBranch->id,
+            'do_number' => 'PO2026-003',
+            'document_type' => 'po',
+            'counterparty_type' => 'branch',
+            'counterparty_name' => 'SUM Bandung',
+            'origin_branch_id' => $this->mainBranch->id,
             'destination_branch_id' => $this->otherBranch->id,
-            'cylinder_type'      => '3kg',
-            'quantity_ordered'   => 50,
-            'order_date'         => '2026-08-10',
-            'requested_by'       => $this->branchOwner->id,
-            'status'             => 'pending_approval',
+            'cylinder_type' => '3kg',
+            'quantity_ordered' => 50,
+            'order_date' => '2026-08-10',
+            'requested_by' => $this->branchOwner->id,
+            'status' => 'pending_approval',
         ]);
 
         $po->update([
-            'status'      => 'approved',
+            'status' => 'approved',
             'approved_by' => $this->pusat->id,
             'approved_at' => now(),
         ]);
@@ -284,7 +288,7 @@ class DocumentTypeFlowTest extends TestCase
         $this->assertSame(1, DeliveryOrder::purchaseOrders()->count());
         $this->assertSame(0, DeliveryOrder::deliveryOrders()->count());
 
-        $notification = \Illuminate\Support\Facades\DB::table('notifications')
+        $notification = DB::table('notifications')
             ->where('notifiable_id', $this->branchOwner->id)
             ->orderByDesc('created_at')
             ->first();
@@ -295,27 +299,27 @@ class DocumentTypeFlowTest extends TestCase
     public function delivery_order_index_defaults_to_do_only(): void
     {
         DeliveryOrder::create([
-            'do_number'          => 'SO2026-004',
-            'document_type'      => 'so',
-            'counterparty_type'  => 'pertamina',
-            'origin_branch_id'   => $this->mainBranch->id,
-            'cylinder_type'      => '3kg',
-            'quantity_ordered'   => 100,
-            'order_date'         => '2026-08-10',
-            'requested_by'       => $this->pusat->id,
-            'status'             => 'draft',
+            'do_number' => 'SO2026-004',
+            'document_type' => 'so',
+            'counterparty_type' => 'pertamina',
+            'origin_branch_id' => $this->mainBranch->id,
+            'cylinder_type' => '3kg',
+            'quantity_ordered' => 100,
+            'order_date' => '2026-08-10',
+            'requested_by' => $this->pusat->id,
+            'status' => 'draft',
         ]);
 
         DeliveryOrder::create([
-            'do_number'          => 'DO2026-001',
-            'document_type'      => 'do',
-            'origin_branch_id'   => $this->mainBranch->id,
+            'do_number' => 'DO2026-001',
+            'document_type' => 'do',
+            'origin_branch_id' => $this->mainBranch->id,
             'destination_branch_id' => $this->otherBranch->id,
-            'cylinder_type'      => '3kg',
-            'quantity_ordered'   => 50,
-            'order_date'         => '2026-08-10',
-            'requested_by'       => $this->branchOwner->id,
-            'status'             => 'draft',
+            'cylinder_type' => '3kg',
+            'quantity_ordered' => 50,
+            'order_date' => '2026-08-10',
+            'requested_by' => $this->branchOwner->id,
+            'status' => 'draft',
         ]);
 
         $this->actingAs($this->pusat, 'sanctum');
@@ -342,39 +346,39 @@ class DocumentTypeFlowTest extends TestCase
     {
         // Create a PO for the other branch (owned by branchOwner)
         DeliveryOrder::create([
-            'do_number'          => 'PO2026-004',
-            'document_type'      => 'po',
-            'counterparty_type'  => 'branch',
-            'counterparty_name'  => 'SUM Bandung',
-            'origin_branch_id'   => $this->mainBranch->id,
+            'do_number' => 'PO2026-004',
+            'document_type' => 'po',
+            'counterparty_type' => 'branch',
+            'counterparty_name' => 'SUM Bandung',
+            'origin_branch_id' => $this->mainBranch->id,
             'destination_branch_id' => $this->otherBranch->id,
-            'cylinder_type'      => '3kg',
-            'quantity_ordered'   => 50,
-            'order_date'         => '2026-08-10',
-            'requested_by'       => $this->branchOwner->id,
-            'status'             => 'draft',
+            'cylinder_type' => '3kg',
+            'quantity_ordered' => 50,
+            'order_date' => '2026-08-10',
+            'requested_by' => $this->branchOwner->id,
+            'status' => 'draft',
         ]);
 
         // Create a PO for a different branch (should NOT be visible to branchOwner)
         $anotherBranch = Branch::create([
-            'code'   => 'SRG',
-            'name'   => 'SUM Surabaya',
-            'city'   => 'Surabaya',
+            'code' => 'SRG',
+            'name' => 'SUM Surabaya',
+            'city' => 'Surabaya',
             'status' => 'active',
         ]);
 
         DeliveryOrder::create([
-            'do_number'          => 'PO2026-005',
-            'document_type'      => 'po',
-            'counterparty_type'  => 'branch',
-            'counterparty_name'  => 'SUM Surabaya',
-            'origin_branch_id'   => $this->mainBranch->id,
+            'do_number' => 'PO2026-005',
+            'document_type' => 'po',
+            'counterparty_type' => 'branch',
+            'counterparty_name' => 'SUM Surabaya',
+            'origin_branch_id' => $this->mainBranch->id,
             'destination_branch_id' => $anotherBranch->id,
-            'cylinder_type'      => '3kg',
-            'quantity_ordered'   => 30,
-            'order_date'         => '2026-08-10',
-            'requested_by'       => $this->pusat->id,
-            'status'             => 'draft',
+            'cylinder_type' => '3kg',
+            'quantity_ordered' => 30,
+            'order_date' => '2026-08-10',
+            'requested_by' => $this->pusat->id,
+            'status' => 'draft',
         ]);
 
         $this->actingAs($this->branchOwner, 'sanctum');
@@ -390,15 +394,15 @@ class DocumentTypeFlowTest extends TestCase
     public function delivery_order_write_endpoints_are_gone(): void
     {
         $legacyDo = DeliveryOrder::create([
-            'do_number'             => 'DO2026-001',
-            'document_type'         => 'do',
-            'origin_branch_id'      => $this->mainBranch->id,
+            'do_number' => 'DO2026-001',
+            'document_type' => 'do',
+            'origin_branch_id' => $this->mainBranch->id,
             'destination_branch_id' => $this->otherBranch->id,
-            'cylinder_type'         => '3kg',
-            'quantity_ordered'      => 50,
-            'order_date'            => '2026-08-10',
-            'requested_by'          => $this->pusat->id,
-            'status'                => 'draft',
+            'cylinder_type' => '3kg',
+            'quantity_ordered' => 50,
+            'order_date' => '2026-08-10',
+            'requested_by' => $this->pusat->id,
+            'status' => 'draft',
         ]);
 
         $this->actingAs($this->pusat, 'sanctum');
@@ -418,40 +422,40 @@ class DocumentTypeFlowTest extends TestCase
     {
         // A legacy DO left in an active status must not inflate the live counters.
         DeliveryOrder::create([
-            'do_number'             => 'DO2026-010',
-            'document_type'         => 'do',
-            'origin_branch_id'      => $this->mainBranch->id,
+            'do_number' => 'DO2026-010',
+            'document_type' => 'do',
+            'origin_branch_id' => $this->mainBranch->id,
             'destination_branch_id' => $this->otherBranch->id,
-            'cylinder_type'         => '3kg',
-            'quantity_ordered'      => 50,
-            'order_date'            => '2026-08-10',
-            'requested_by'          => $this->branchOwner->id,
-            'status'                => 'approved',
+            'cylinder_type' => '3kg',
+            'quantity_ordered' => 50,
+            'order_date' => '2026-08-10',
+            'requested_by' => $this->branchOwner->id,
+            'status' => 'approved',
         ]);
 
         DeliveryOrder::create([
-            'do_number'             => 'PO2026-010',
-            'document_type'         => 'po',
-            'counterparty_type'     => 'branch',
-            'origin_branch_id'      => $this->mainBranch->id,
+            'do_number' => 'PO2026-010',
+            'document_type' => 'po',
+            'counterparty_type' => 'branch',
+            'origin_branch_id' => $this->mainBranch->id,
             'destination_branch_id' => $this->otherBranch->id,
-            'cylinder_type'         => '3kg',
-            'quantity_ordered'      => 50,
-            'order_date'            => '2026-08-10',
-            'requested_by'          => $this->branchOwner->id,
-            'status'                => 'approved',
+            'cylinder_type' => '3kg',
+            'quantity_ordered' => 50,
+            'order_date' => '2026-08-10',
+            'requested_by' => $this->branchOwner->id,
+            'status' => 'approved',
         ]);
 
         DeliveryOrder::create([
-            'do_number'             => 'LO2026-010',
-            'document_type'         => 'lo',
-            'origin_branch_id'      => $this->mainBranch->id,
+            'do_number' => 'LO2026-010',
+            'document_type' => 'lo',
+            'origin_branch_id' => $this->mainBranch->id,
             'destination_branch_id' => $this->otherBranch->id,
-            'cylinder_type'         => '3kg',
-            'quantity_ordered'      => 50,
-            'order_date'            => '2026-08-10',
-            'requested_by'          => $this->branchOwner->id,
-            'status'                => 'approved',
+            'cylinder_type' => '3kg',
+            'quantity_ordered' => 50,
+            'order_date' => '2026-08-10',
+            'requested_by' => $this->branchOwner->id,
+            'status' => 'approved',
         ]);
 
         $this->actingAs($this->pusat, 'sanctum');

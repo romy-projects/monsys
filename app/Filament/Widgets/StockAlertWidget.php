@@ -3,6 +3,7 @@
 namespace App\Filament\Widgets;
 
 use App\Models\Branch;
+use Filament\Support\Enums\FontWeight;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Filament\Widgets\TableWidget as BaseWidget;
@@ -33,19 +34,19 @@ class StockAlertWidget extends BaseWidget
 
                 Tables\Columns\TextColumn::make('name')
                     ->label('Branch / Cabang')
-                    ->weight(\Filament\Support\Enums\FontWeight::SemiBold),
+                    ->weight(FontWeight::SemiBold),
 
                 Tables\Columns\TextColumn::make('city')
                     ->label('City'),
 
                 Tables\Columns\TextColumn::make('total_full')
                     ->label('Full Cylinders')
-                    ->formatStateUsing(fn ($state) => number_format((int)$state) . ' pcs')
+                    ->formatStateUsing(fn ($state) => number_format((int) $state).' pcs')
                     ->color(fn ($state) => $state < 20 ? 'danger' : 'warning'),
 
                 Tables\Columns\TextColumn::make('total_empty')
                     ->label('Empty Cylinders')
-                    ->formatStateUsing(fn ($state) => number_format((int)$state) . ' pcs')
+                    ->formatStateUsing(fn ($state) => number_format((int) $state).' pcs')
                     ->color('secondary'),
             ])
             ->striped()

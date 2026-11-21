@@ -20,6 +20,7 @@ class DeliveryOrderObserver
             $do->status = 'delivered';
             $do->saveQuietly();
             $this->handleDelivered($do);
+
             return;
         }
 
@@ -29,10 +30,10 @@ class DeliveryOrderObserver
 
         match ($do->status) {
             'pending_approval' => $this->notifyPendingApproval($do),
-            'approved'         => $this->handleApproved($do),
-            'on_transportir'   => $this->notifyOnTransportir($do),
-            'delivered'        => $this->handleDelivered($do),
-            default            => null,
+            'approved' => $this->handleApproved($do),
+            'on_transportir' => $this->notifyOnTransportir($do),
+            'delivered' => $this->handleDelivered($do),
+            default => null,
         };
     }
 
@@ -46,7 +47,10 @@ class DeliveryOrderObserver
 
     private function notifyPendingApproval(DeliveryOrder $do): void
     {
-        $recipients = User::whereIn('role', ['owner_pusat', 'regional_leader'])
+        $recipients = User::whereHas('accessRole.permissions', fn ($query) => $query->whereIn(
+            'permissions.key',
+            ['system.business_admin', 'system.regional_access']
+        ))
             ->where('status', 'active')
             ->get();
 
@@ -58,7 +62,7 @@ class DeliveryOrderObserver
 
         Notification::make()
             ->title("📋 {$docLabel} Pending Approval")
-            ->body("{$docLabel} #{$do->do_number} from {$do->destinationBranch?->name} requires approval. " . number_format($do->quantity_ordered) . " pcs of {$do->cylinder_type}.")
+            ->body("{$docLabel} #{$do->do_number} from {$do->destinationBranch?->name} requires approval. ".number_format($do->quantity_ordered)." pcs of {$do->cylinder_type}.")
             ->warning()
             ->sendToDatabase($recipients);
     }
@@ -67,7 +71,10 @@ class DeliveryOrderObserver
     {
         // After Bug 1 fix: destination_branch_id = requesting branch that will receive stock
         $recipients = User::where('branch_id', $do->destination_branch_id)
-            ->whereIn('role', ['owner_cabang', 'staff_gudang'])
+            ->whereHas('accessRole.permissions', fn ($query) => $query->whereIn(
+                'permissions.key',
+                ['system.branch_owner', 'system.warehouse_staff']
+            ))
             ->where('status', 'active')
             ->get();
 
@@ -94,7 +101,10 @@ class DeliveryOrderObserver
     private function notifyOnTransportir(DeliveryOrder $do): void
     {
         $recipients = User::where('branch_id', $do->destination_branch_id)
-            ->whereIn('role', ['owner_cabang', 'staff_gudang'])
+            ->whereHas('accessRole.permissions', fn ($query) => $query->whereIn(
+                'permissions.key',
+                ['system.branch_owner', 'system.warehouse_staff']
+            ))
             ->where('status', 'active')
             ->get();
 
@@ -106,7 +116,7 @@ class DeliveryOrderObserver
 
         Notification::make()
             ->title("🚛 {$documentLabel} On Transportir")
-            ->body("{$documentLabel} #{$do->do_number} is now with the transportir. ETA: " . ($do->eta?->format('d M Y') ?? 'N/A') . ".")
+            ->body("{$documentLabel} #{$do->do_number} is now with the transportir. ETA: ".($do->eta?->format('d M Y') ?? 'N/A').'.')
             ->warning()
             ->sendToDatabase($recipients);
     }
@@ -128,13 +138,16 @@ class DeliveryOrderObserver
 
         // 3. Notify destination branch
         $recipients = User::where('branch_id', $do->destination_branch_id)
-            ->whereIn('role', ['owner_cabang', 'staff_gudang'])
+            ->whereHas('accessRole.permissions', fn ($query) => $query->whereIn(
+                'permissions.key',
+                ['system.branch_owner', 'system.warehouse_staff']
+            ))
             ->where('status', 'active')
             ->get();
 
         if ($recipients->isNotEmpty()) {
             $received = $do->quantity_received !== null
-                ? number_format($do->quantity_received) . ' pcs received'
+                ? number_format($do->quantity_received).' pcs received'
                 : 'delivered';
             $documentLabel = $do->document_type === 'po' ? 'PO' : 'DO';
 
@@ -171,7 +184,7 @@ class DeliveryOrderObserver
                 ['branch_id' => $po->origin_branch_id, 'type' => 'out'],
                 ['branch_id' => $po->destination_branch_id, 'type' => 'in'],
             ] as $movement) {
-                $alreadyRecorded = StockMutation::query()
+                $alreadyRecorded = StockMutation::withoutGlobalScopes()
                     ->where('branch_id', $movement['branch_id'])
                     ->where('mutation_type', $movement['type'])
                     ->where(function ($query) use ($po) {
@@ -188,19 +201,19 @@ class DeliveryOrderObserver
                 }
 
                 StockMutation::create([
-                    'purchase_order_id'    => $po->id,
-                    'branch_id'            => $movement['branch_id'],
-                    'source_branch_id'     => $movement['type'] === 'out' ? $po->origin_branch_id : null,
+                    'purchase_order_id' => $po->id,
+                    'branch_id' => $movement['branch_id'],
+                    'source_branch_id' => $movement['type'] === 'out' ? $po->origin_branch_id : null,
                     'destination_branch_id' => $movement['type'] === 'in' ? $po->destination_branch_id : null,
-                    'cylinder_type'        => $po->cylinder_type,
-                    'mutation_type'        => $movement['type'],
-                    'quantity'             => $quantity,
-                    'reference_no'         => $po->do_number,
-                    'notes'                => $movement['type'] === 'out'
+                    'cylinder_type' => $po->cylinder_type,
+                    'mutation_type' => $movement['type'],
+                    'quantity' => $quantity,
+                    'reference_no' => $po->do_number,
+                    'notes' => $movement['type'] === 'out'
                         ? "HQ stock fulfilled PO #{$po->do_number} for {$po->destinationBranch?->name}"
                         : "Receipt for PO #{$po->do_number} from {$po->originBranch?->name}",
-                    'mutation_date'        => $date,
-                    'created_by'           => $createdBy,
+                    'mutation_date' => $date,
+                    'created_by' => $createdBy,
                 ]);
 
                 $this->updateStockItemForReceipt(
@@ -224,16 +237,16 @@ class DeliveryOrderObserver
             if (! $circulationExists) {
                 CylinderCirculation::create([
                     'purchase_order_id' => $po->id,
-                    'branch_id'          => $po->destination_branch_id,
-                    'transaction_date'   => $date,
-                    'so_number'          => $po->do_number,
-                    'transaction_type'   => 'kirim',
-                    'description'        => "PO #{$po->do_number} received from HQ",
-                    'cylinder_type'      => $po->cylinder_type,
-                    'direction'          => 'debit',
-                    'quantity'           => $quantity,
-                    'notes'              => "Received against PO #{$po->do_number}",
-                    'created_by'         => $createdBy,
+                    'branch_id' => $po->destination_branch_id,
+                    'transaction_date' => $date,
+                    'so_number' => $po->do_number,
+                    'transaction_type' => 'kirim',
+                    'description' => "PO #{$po->do_number} received from HQ",
+                    'cylinder_type' => $po->cylinder_type,
+                    'direction' => 'debit',
+                    'quantity' => $quantity,
+                    'notes' => "Received against PO #{$po->do_number}",
+                    'created_by' => $createdBy,
                 ]);
             }
         });
@@ -246,7 +259,7 @@ class DeliveryOrderObserver
         int $quantity,
         bool $incoming
     ): void {
-        $stock = StockItem::query()
+        $stock = StockItem::withoutGlobalScopes()
             ->where('branch_id', $branchId)
             ->where('cylinder_type', $cylinderType)
             ->whereDate('recorded_at', $date)
@@ -267,30 +280,30 @@ class DeliveryOrderObserver
 
         // Origin branch: OUT (HPP deduction)
         StockMutation::create([
-            'branch_id'               => $do->origin_branch_id,
-            'source_branch_id'        => null,
-            'destination_branch_id'   => null,
-            'cylinder_type'           => $do->cylinder_type,
-            'mutation_type'           => 'out',
-            'quantity'                => $qty,
-            'reference_no'            => $ref,
-            'notes'                   => "HPP for DO #{$ref} to {$do->destinationBranch?->name}",
-            'mutation_date'           => $date,
-            'created_by'              => auth()->id() ?? $do->requested_by,
+            'branch_id' => $do->origin_branch_id,
+            'source_branch_id' => null,
+            'destination_branch_id' => null,
+            'cylinder_type' => $do->cylinder_type,
+            'mutation_type' => 'out',
+            'quantity' => $qty,
+            'reference_no' => $ref,
+            'notes' => "HPP for DO #{$ref} to {$do->destinationBranch?->name}",
+            'mutation_date' => $date,
+            'created_by' => auth()->id() ?? $do->requested_by,
         ]);
 
         // Destination branch: IN (stock receipt)
         StockMutation::create([
-            'branch_id'               => $do->destination_branch_id,
-            'source_branch_id'        => null,
-            'destination_branch_id'   => null,
-            'cylinder_type'           => $do->cylinder_type,
-            'mutation_type'           => 'in',
-            'quantity'                => $qty,
-            'reference_no'            => $ref,
-            'notes'                   => "Purchase/receipt from DO #{$ref} — {$do->originBranch?->name}",
-            'mutation_date'           => $date,
-            'created_by'              => auth()->id() ?? $do->requested_by,
+            'branch_id' => $do->destination_branch_id,
+            'source_branch_id' => null,
+            'destination_branch_id' => null,
+            'cylinder_type' => $do->cylinder_type,
+            'mutation_type' => 'in',
+            'quantity' => $qty,
+            'reference_no' => $ref,
+            'notes' => "Purchase/receipt from DO #{$ref} — {$do->originBranch?->name}",
+            'mutation_date' => $date,
+            'created_by' => auth()->id() ?? $do->requested_by,
         ]);
     }
 

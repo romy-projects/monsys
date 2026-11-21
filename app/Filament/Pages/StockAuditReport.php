@@ -6,6 +6,7 @@ use App\Models\Branch;
 use App\Models\StockItem;
 use App\Models\StockMutation;
 use Filament\Pages\Page;
+use Illuminate\Database\Eloquent\Collection;
 
 class StockAuditReport extends Page
 {
@@ -19,9 +20,11 @@ class StockAuditReport extends Page
 
     protected static ?string $title = 'Stock Audit Report / Laporan Audit Stok';
 
-    public ?int $branch_id    = null;
+    public ?int $branch_id = null;
+
     public string $start_date = '';
-    public string $end_date   = '';
+
+    public string $end_date = '';
 
     public static function getNavigationLabel(): string
     {
@@ -32,39 +35,39 @@ class StockAuditReport extends Page
     {
         $user = auth()->user();
 
-        if (! $user?->isOwnerPusat() && ! $user?->isRegionalLeader()) {
-            $this->branch_id = $user->branch_id;
+        if ($user !== null && ! $user->canAccessAllBranches()) {
+            $this->branch_id = $user->branch_id && $user->canAccessBranch((int) $user->branch_id)
+                ? (int) $user->branch_id
+                : (count($user->accessibleBranchIds()) === 1 ? $user->accessibleBranchIds()[0] : null);
         }
 
         $this->start_date = now()->startOfMonth()->toDateString();
-        $this->end_date   = now()->toDateString();
+        $this->end_date = now()->toDateString();
     }
 
-    public function getBranches(): \Illuminate\Database\Eloquent\Collection
+    public function getBranches(): Collection
     {
         $user = auth()->user();
 
-        if ($user?->isOwnerPusat() || $user?->isRegionalLeader()) {
-            return Branch::active()->orderBy('name')->get();
-        }
+        $query = Branch::active()->orderBy('name');
+        $user?->applyAccessibleBranchScope($query, 'branches.id');
 
-        return Branch::where('id', $user?->branch_id)->get();
+        return $query->get();
     }
 
     public function getAuditData(): array
     {
-        $types     = ['3kg', '5.5kg', '12kg', '50kg'];
+        $types = ['3kg', '5.5kg', '12kg', '50kg'];
         $startDate = $this->start_date ?: now()->startOfMonth()->toDateString();
-        $endDate   = $this->end_date   ?: now()->toDateString();
-        $branchId  = $this->branch_id;
-        $user      = auth()->user();
+        $endDate = $this->end_date ?: now()->toDateString();
+        $branchId = $this->branch_id;
+        $user = auth()->user();
 
         $branchQuery = Branch::active()->orderBy('name');
+        $user?->applyAccessibleBranchScope($branchQuery, 'branches.id');
 
         if ($branchId) {
             $branchQuery->where('id', $branchId);
-        } elseif (! $user->isOwnerPusat() && ! $user->isRegionalLeader()) {
-            $branchQuery->where('id', $user->branch_id);
         }
 
         $branches = $branchQuery->get();
@@ -79,7 +82,7 @@ class StockAuditReport extends Page
         $mutations = StockMutation::whereIn('branch_id', $branches->pluck('id'))
             ->whereBetween('mutation_date', [$startDate, $endDate])
             ->get()
-            ->groupBy(fn ($m) => $m->branch_id . '|' . $m->cylinder_type);
+            ->groupBy(fn ($m) => $m->branch_id.'|'.$m->cylinder_type);
 
         $rows = [];
 
@@ -88,10 +91,10 @@ class StockAuditReport extends Page
 
             foreach ($types as $type) {
                 $currentStock = $stocks->get($type);
-                $key          = $branch->id . '|' . $type;
+                $key = $branch->id.'|'.$type;
                 $typeMutations = $mutations->get($key, collect());
 
-                $netIn  = 0;
+                $netIn = 0;
                 $netOut = 0;
 
                 foreach ($typeMutations as $m) {
@@ -112,28 +115,28 @@ class StockAuditReport extends Page
                 $actualFull = $currentStock?->qty_full ?? null;
 
                 $rows[] = [
-                    'branch'       => $branch,
-                    'type'         => $type,
-                    'net_in'       => $netIn,
-                    'net_out'      => $netOut,
+                    'branch' => $branch,
+                    'type' => $type,
+                    'net_in' => $netIn,
+                    'net_out' => $netOut,
                     'net_movement' => $netIn - $netOut,
-                    'actual_full'  => $actualFull,
-                    'recorded_at'  => $currentStock?->recorded_at,
+                    'actual_full' => $actualFull,
+                    'recorded_at' => $currentStock?->recorded_at,
                     'mutations_count' => $typeMutations->count(),
                 ];
             }
         }
 
         return [
-            'rows'       => $rows,
-            'types'      => $types,
+            'rows' => $rows,
+            'types' => $types,
             'start_date' => $startDate,
-            'end_date'   => $endDate,
+            'end_date' => $endDate,
         ];
     }
 
     public static function canAccess(): bool
     {
-        return auth()->check();
+        return auth()->user()?->hasPermission('reports.stock_audit.view') ?? false;
     }
 }

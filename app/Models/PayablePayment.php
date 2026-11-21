@@ -26,7 +26,7 @@ class PayablePayment extends Model
 
     protected $casts = [
         'paid_on' => 'date',
-        'amount'  => 'decimal:2',
+        'amount' => 'decimal:2',
     ];
 
     public function payable(): BelongsTo

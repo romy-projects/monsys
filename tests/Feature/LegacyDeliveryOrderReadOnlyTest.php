@@ -22,7 +22,9 @@ class LegacyDeliveryOrderReadOnlyTest extends TestCase
     use RefreshDatabase;
 
     private User $pusat;
+
     private User $branchOwner;
+
     private DeliveryOrder $legacyDo;
 
     protected function setUp(): void
@@ -32,50 +34,50 @@ class LegacyDeliveryOrderReadOnlyTest extends TestCase
         Storage::fake('public');
 
         $mainBranch = Branch::create([
-            'code'   => 'PST',
-            'name'   => 'SUM Pusat',
-            'city'   => 'Jakarta',
+            'code' => 'PST',
+            'name' => 'SUM Pusat',
+            'city' => 'Jakarta',
             'status' => 'active',
         ]);
 
         $destinationBranch = Branch::create([
-            'code'   => 'BDG',
-            'name'   => 'SUM Bandung',
-            'city'   => 'Bandung',
+            'code' => 'BDG',
+            'name' => 'SUM Bandung',
+            'city' => 'Bandung',
             'status' => 'active',
         ]);
 
         $this->pusat = User::create([
-            'name'      => 'Pusat User',
-            'email'     => 'pusat-legacy@test.com',
-            'password'  => bcrypt('password'),
-            'role'      => 'owner_pusat',
+            'name' => 'Pusat User',
+            'email' => 'pusat-legacy@test.com',
+            'password' => bcrypt('password'),
+            'role' => 'owner_pusat',
             'branch_id' => $mainBranch->id,
-            'status'    => 'active',
+            'status' => 'active',
         ]);
 
         $this->branchOwner = User::create([
-            'name'      => 'Bandung Owner',
-            'email'     => 'bandung-legacy@test.com',
-            'password'  => bcrypt('password'),
-            'role'      => 'owner_cabang',
+            'name' => 'Bandung Owner',
+            'email' => 'bandung-legacy@test.com',
+            'password' => bcrypt('password'),
+            'role' => 'owner_cabang',
             'branch_id' => $destinationBranch->id,
-            'status'    => 'active',
+            'status' => 'active',
         ]);
 
         $this->legacyDo = DeliveryOrder::create([
-            'do_number'             => 'DO2026-001',
-            'document_type'         => 'do',
-            'counterparty_type'     => 'branch',
-            'counterparty_name'     => 'SUM Bandung',
-            'origin_branch_id'      => $mainBranch->id,
+            'do_number' => 'DO2026-001',
+            'document_type' => 'do',
+            'counterparty_type' => 'branch',
+            'counterparty_name' => 'SUM Bandung',
+            'origin_branch_id' => $mainBranch->id,
             'destination_branch_id' => $destinationBranch->id,
-            'cylinder_type'         => '3kg',
-            'quantity_ordered'      => 50,
-            'order_date'            => '2026-08-10',
-            'requested_by'          => $this->pusat->id,
-            'receipt_path'          => 'do-receipts/signed-receipt.pdf',
-            'status'                => 'delivered',
+            'cylinder_type' => '3kg',
+            'quantity_ordered' => 50,
+            'order_date' => '2026-08-10',
+            'requested_by' => $this->pusat->id,
+            'receipt_path' => 'do-receipts/signed-receipt.pdf',
+            'status' => 'delivered',
         ]);
     }
 
@@ -107,9 +109,9 @@ class LegacyDeliveryOrderReadOnlyTest extends TestCase
         $this->actingAs($this->pusat, 'sanctum');
 
         $this->postJson('/api/v1/delivery-orders', [
-            'cylinder_type'    => '3kg',
+            'cylinder_type' => '3kg',
             'quantity_ordered' => 10,
-            'order_date'       => '2026-08-10',
+            'order_date' => '2026-08-10',
         ])->assertStatus(405);
 
         $this->putJson("/api/v1/delivery-orders/{$this->legacyDo->id}", [
@@ -124,9 +126,9 @@ class LegacyDeliveryOrderReadOnlyTest extends TestCase
         }
 
         $this->assertDatabaseHas('delivery_orders', [
-            'id'               => $this->legacyDo->id,
+            'id' => $this->legacyDo->id,
             'quantity_ordered' => 50,
-            'status'           => 'delivered',
+            'status' => 'delivered',
         ]);
     }
 

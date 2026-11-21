@@ -18,8 +18,7 @@ class LpgPriceFormState
         string $sellingPriceField,
         bool $includePurchasePrice = false,
         bool $useInvoiceDestination = false,
-    ): void
-    {
+    ): void {
         $type = $get('cylinder_type');
         $date = $get('sale_date') ?? $get('issue_date');
 

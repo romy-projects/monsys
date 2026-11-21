@@ -11,7 +11,6 @@ use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Collection;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 
 class CylinderCirculationResource extends Resource
@@ -39,22 +38,25 @@ class CylinderCirculationResource extends Resource
     public static function form(Form $form): Form
     {
         $user = auth()->user();
-        $isPusat = $user?->isOwnerPusat() ?? false;
+        $branchIds = $user?->accessibleBranchIds() ?? [];
+        $branchQuery = Branch::where('status', 'active')->orderBy('name');
+        $user?->applyAccessibleBranchScope($branchQuery, 'branches.id');
+        $canChooseBranch = $user?->canAccessAllBranches() || count($branchIds) > 1;
+        $defaultBranchId = $user?->branch_id !== null && in_array((int) $user->branch_id, $branchIds, true)
+            ? $user->branch_id
+            : ($branchIds[0] ?? null);
+        $defaultBranchId = $user?->canAccessAllBranches() ? null : $defaultBranchId;
 
         return $form->schema([
             Forms\Components\Section::make('Transaction Details')
                 ->schema([
                     Forms\Components\Select::make('branch_id')
                         ->label('Branch')
-                        ->options(
-                            $isPusat
-                                ? Branch::where('status', 'active')->orderBy('name')->pluck('name', 'id')
-                                : Branch::whereKey($user->branch_id)->pluck('name', 'id')
-                        )
+                        ->options($branchQuery->pluck('name', 'id'))
                         ->searchable()
                         ->required()
-                        ->default(fn() => $isPusat ? null : $user->branch_id)
-                        ->disabled(fn() => ! $isPusat)
+                        ->default($defaultBranchId)
+                        ->disabled(! $canChooseBranch)
                         ->dehydrated()
                         ->columnSpan(2),
 
@@ -72,10 +74,10 @@ class CylinderCirculationResource extends Resource
                     Forms\Components\Select::make('transaction_type')
                         ->label('Transaction Type')
                         ->options([
-                            'kirim'          => 'Kirim (Pengiriman)',
+                            'kirim' => 'Kirim (Pengiriman)',
                             'bongkar_kosong' => 'Bongkar Kosong',
-                            'pembelian'      => 'Pembelian Tabung Baru',
-                            'penyesuaian'    => 'Penyesuaian',
+                            'pembelian' => 'Pembelian Tabung Baru',
+                            'penyesuaian' => 'Penyesuaian',
                         ])
                         ->required()
                         ->live(),
@@ -89,7 +91,7 @@ class CylinderCirculationResource extends Resource
                     Forms\Components\Select::make('cylinder_type')
                         ->label('Cylinder Type')
                         ->options([
-                            '3kg'  => '3 kg',
+                            '3kg' => '3 kg',
                             '5.5kg' => '5.5 kg',
                             '12kg' => '12 kg',
                             '50kg' => '50 kg',
@@ -134,14 +136,8 @@ class CylinderCirculationResource extends Resource
     public static function table(Table $table): Table
     {
         $user = auth()->user();
-        $isPusat = $user?->isOwnerPusat();
 
         return $table
-            ->modifyQueryUsing(function (Builder $query) use ($user, $isPusat) {
-                if (! $isPusat && $user) {
-                    $query->where('branch_id', $user->branch_id);
-                }
-            })
             ->columns([
                 Tables\Columns\TextColumn::make('transaction_date')
                     ->label('Date')
@@ -161,13 +157,13 @@ class CylinderCirculationResource extends Resource
                 Tables\Columns\TextColumn::make('transaction_type')
                     ->label('Type')
                     ->badge()
-                    ->color(fn(string $state): string => match ($state) {
-                        'kirim'          => 'info',
+                    ->color(fn (string $state): string => match ($state) {
+                        'kirim' => 'info',
                         'bongkar_kosong' => 'warning',
-                        'pembelian'      => 'success',
-                        'penyesuaian'    => 'gray',
+                        'pembelian' => 'success',
+                        'penyesuaian' => 'gray',
                     })
-                    ->formatStateUsing(fn($state) => ucfirst(str_replace('_', ' ', $state))),
+                    ->formatStateUsing(fn ($state) => ucfirst(str_replace('_', ' ', $state))),
 
                 Tables\Columns\TextColumn::make('cylinder_type')
                     ->label('Type')
@@ -176,8 +172,8 @@ class CylinderCirculationResource extends Resource
                 Tables\Columns\TextColumn::make('direction')
                     ->label('Dir')
                     ->badge()
-                    ->color(fn(string $state): string => $state === 'debit' ? 'success' : 'danger')
-                    ->formatStateUsing(fn($state) => $state === 'debit' ? 'IN' : 'OUT'),
+                    ->color(fn (string $state): string => $state === 'debit' ? 'success' : 'danger')
+                    ->formatStateUsing(fn ($state) => $state === 'debit' ? 'IN' : 'OUT'),
 
                 Tables\Columns\TextColumn::make('quantity')
                     ->label('Qty')
@@ -198,19 +194,26 @@ class CylinderCirculationResource extends Resource
             ->filters([
                 Tables\Filters\SelectFilter::make('branch_id')
                     ->label('Branch')
-                    ->options(Branch::where('status', 'active')->orderBy('name')->pluck('name', 'id')),
+                    ->options(function () use ($user) {
+                        $query = Branch::where('status', 'active')->orderBy('name');
+                        $user?->applyAccessibleBranchScope($query, 'branches.id');
+
+                        return $query->pluck('name', 'id');
+                    })
+                    ->visible(fn () => $user?->canAccessAllBranches() || count($user?->accessibleBranchIds() ?? []) > 1
+                    ),
 
                 Tables\Filters\SelectFilter::make('transaction_type')
                     ->options([
-                        'kirim'          => 'Kirim',
+                        'kirim' => 'Kirim',
                         'bongkar_kosong' => 'Bongkar Kosong',
-                        'pembelian'      => 'Pembelian',
-                        'penyesuaian'    => 'Penyesuaian',
+                        'pembelian' => 'Pembelian',
+                        'penyesuaian' => 'Penyesuaian',
                     ]),
 
                 Tables\Filters\SelectFilter::make('cylinder_type')
                     ->options([
-                        '3kg'  => '3 kg',
+                        '3kg' => '3 kg',
                         '5.5kg' => '5.5 kg',
                         '12kg' => '12 kg',
                         '50kg' => '50 kg',
@@ -224,15 +227,22 @@ class CylinderCirculationResource extends Resource
             ])
             ->actions([
                 Tables\Actions\EditAction::make()
-                    ->visible(fn (CylinderCirculation $record) => static::canEdit($record)),
+                    ->visible(fn (CylinderCirculation $record) => static::canEdit($record))
+                    ->authorize(fn (CylinderCirculation $record) => static::canEdit($record)),
                 Tables\Actions\DeleteAction::make()
-                    ->visible(fn (CylinderCirculation $record) => static::canDelete($record)),
+                    ->visible(fn (CylinderCirculation $record) => static::canDelete($record))
+                    ->authorize(fn (CylinderCirculation $record) => static::canDelete($record)),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make()
+                        // Filament evaluates this while the table renders, before
+                        // anything is selected and `getRecords()` is still null, so
+                        // it can only gate on the permission. The per-record guard
+                        // runs in `using()` below, which always has a selection.
+                        ->authorize(fn (): bool => static::can('deleteAny'))
                         ->using(fn (Collection $records) => $records
-                            ->whereNull('purchase_order_id')
+                            ->filter(fn (CylinderCirculation $record): bool => static::canDelete($record))
                             ->each(fn (CylinderCirculation $record) => $record->delete())),
                 ]),
             ]);
@@ -246,9 +256,9 @@ class CylinderCirculationResource extends Resource
     public static function getPages(): array
     {
         return [
-            'index'  => Pages\ListCylinderCirculations::route('/'),
+            'index' => Pages\ListCylinderCirculations::route('/'),
             'create' => Pages\CreateCylinderCirculation::route('/create'),
-            'edit'   => Pages\EditCylinderCirculation::route('/{record}/edit'),
+            'edit' => Pages\EditCylinderCirculation::route('/{record}/edit'),
         ];
     }
 
@@ -259,29 +269,21 @@ class CylinderCirculationResource extends Resource
 
     public static function canAccess(): bool
     {
-        $user = auth()->user();
-        if (! $user) {
-            return false;
-        }
-        return $user->isOwnerPusat();
+        return static::can('viewAny');
     }
 
     public static function canCreate(): bool
     {
-        $user = auth()->user();
-
-        return $user?->isOwnerPusat() ?? false;
+        return static::can('create');
     }
 
     public static function canEdit(Model $record): bool
     {
-        $user = auth()->user();
-
-        return $record->purchase_order_id === null && ($user?->isOwnerPusat() ?? false);
+        return $record->purchase_order_id === null && static::can('update', $record);
     }
 
     public static function canDelete(Model $record): bool
     {
-        return static::canEdit($record);
+        return $record->purchase_order_id === null && static::can('delete', $record);
     }
 }

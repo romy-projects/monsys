@@ -15,7 +15,7 @@ class DeviceController extends Controller
     {
         $data = $request->validate([
             'fcm_token' => ['required', 'string'],
-            'platform'  => ['required', 'in:android,ios'],
+            'platform' => ['required', 'in:android,ios'],
         ]);
 
         $user = $request->user();
@@ -23,7 +23,7 @@ class DeviceController extends Controller
         // Store FCM token on the user record.
         // Requires `fcm_token` + `fcm_platform` columns on users table (added via migration).
         $user->update([
-            'fcm_token'    => $data['fcm_token'],
+            'fcm_token' => $data['fcm_token'],
             'fcm_platform' => $data['platform'],
         ]);
 

@@ -8,6 +8,7 @@ use App\Models\Customer;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
+use Filament\Support\Enums\FontWeight;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Model;
@@ -36,18 +37,26 @@ class CustomerResource extends Resource
 
     public static function form(Form $form): Form
     {
-        $isPusat = auth()->user()?->isOwnerPusat() || auth()->user()?->isRegionalLeader();
+        $user = auth()->user();
+        $branchIds = $user?->accessibleBranchIds() ?? [];
+        $branchQuery = Branch::active()->orderBy('name');
+        $user?->applyAccessibleBranchScope($branchQuery, 'branches.id');
+        $branchOptions = $branchQuery->pluck('name', 'id');
+        $defaultBranchId = $user?->branch_id !== null && in_array((int) $user->branch_id, $branchIds, true)
+            ? $user->branch_id
+            : ($branchIds[0] ?? null);
+        $singleBranch = count($branchIds) === 1;
 
         return $form->schema([
             Forms\Components\Section::make('Customer Details')
                 ->schema([
                     Forms\Components\Select::make('branch_id')
                         ->label('Branch')
-                        ->options(Branch::active()->orderBy('name')->pluck('name', 'id'))
+                        ->options($branchOptions)
                         ->searchable()
                         ->required()
-                        ->default(fn () => auth()->user()->branch_id)
-                        ->disabled(! $isPusat)
+                        ->default($defaultBranchId)
+                        ->disabled($singleBranch)
                         ->dehydrated()
                         ->columnSpan(2),
 
@@ -58,8 +67,8 @@ class CustomerResource extends Resource
 
                     Forms\Components\Select::make('type')
                         ->options([
-                            'retail'   => 'Retail / Eceran',
-                            'agen'     => 'Agen / Distributor',
+                            'retail' => 'Retail / Eceran',
+                            'agen' => 'Agen / Distributor',
                             'industri' => 'Industri / Perusahaan',
                         ])
                         ->required()
@@ -101,26 +110,26 @@ class CustomerResource extends Resource
                 Tables\Columns\TextColumn::make('name')
                     ->searchable()
                     ->sortable()
-                    ->weight(\Filament\Support\Enums\FontWeight::SemiBold),
+                    ->weight(FontWeight::SemiBold),
 
                 Tables\Columns\TextColumn::make('branch.name')
                     ->label('Branch')
                     ->searchable()
                     ->sortable()
-                    ->toggleable(isToggledHiddenByDefault: ! (auth()->user()?->isOwnerPusat() || auth()->user()?->isRegionalLeader())),
+                    ->toggleable(isToggledHiddenByDefault: ! (auth()->user()?->canAccessAllBranches() || count(auth()->user()?->accessibleBranchIds() ?? []) > 1)),
 
                 Tables\Columns\TextColumn::make('type')
                     ->badge()
                     ->color(fn ($state) => match ($state) {
-                        'agen'     => 'primary',
+                        'agen' => 'primary',
                         'industri' => 'warning',
-                        default    => 'gray',
+                        default => 'gray',
                     })
                     ->formatStateUsing(fn ($state) => match ($state) {
-                        'retail'   => 'Retail',
-                        'agen'     => 'Agen',
+                        'retail' => 'Retail',
+                        'agen' => 'Agen',
                         'industri' => 'Industri',
-                        default    => $state,
+                        default => $state,
                     }),
 
                 Tables\Columns\TextColumn::make('phone')
@@ -128,7 +137,7 @@ class CustomerResource extends Resource
 
                 Tables\Columns\TextColumn::make('credit_limit')
                     ->label('Credit Limit')
-                    ->formatStateUsing(fn ($state) => $state > 0 ? 'Rp ' . number_format((float) $state, 0, ',', '.') : '—')
+                    ->formatStateUsing(fn ($state) => $state > 0 ? 'Rp '.number_format((float) $state, 0, ',', '.') : '—')
                     ->alignRight(),
 
                 Tables\Columns\TextColumn::make('dailySales_count')
@@ -146,8 +155,8 @@ class CustomerResource extends Resource
             ->filters([
                 Tables\Filters\SelectFilter::make('type')
                     ->options([
-                        'retail'   => 'Retail',
-                        'agen'     => 'Agen',
+                        'retail' => 'Retail',
+                        'agen' => 'Agen',
                         'industri' => 'Industri',
                     ]),
 
@@ -156,8 +165,13 @@ class CustomerResource extends Resource
 
                 Tables\Filters\SelectFilter::make('branch_id')
                     ->label('Branch')
-                    ->options(Branch::active()->orderBy('name')->pluck('name', 'id'))
-                    ->visible(fn () => auth()->user()?->isOwnerPusat() || auth()->user()?->isRegionalLeader()),
+                    ->options(function () {
+                        $query = Branch::active()->orderBy('name');
+                        auth()->user()?->applyAccessibleBranchScope($query, 'branches.id');
+
+                        return $query->pluck('name', 'id');
+                    })
+                    ->visible(fn () => auth()->user()?->canAccessAllBranches() || count(auth()->user()?->accessibleBranchIds() ?? []) > 1),
             ])
             ->actions([
                 Tables\Actions\EditAction::make(),
@@ -167,14 +181,7 @@ class CustomerResource extends Resource
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make(),
                 ]),
-            ])
-            ->modifyQueryUsing(function ($query) {
-                $user = auth()->user();
-
-                if (! $user->isOwnerPusat() && ! $user->isRegionalLeader()) {
-                    $query->where('branch_id', $user->branch_id);
-                }
-            });
+            ]);
     }
 
     public static function getRelations(): array
@@ -185,19 +192,19 @@ class CustomerResource extends Resource
     public static function getPages(): array
     {
         return [
-            'index'  => Pages\ListCustomers::route('/'),
+            'index' => Pages\ListCustomers::route('/'),
             'create' => Pages\CreateCustomer::route('/create'),
-            'edit'   => Pages\EditCustomer::route('/{record}/edit'),
+            'edit' => Pages\EditCustomer::route('/{record}/edit'),
         ];
     }
 
     public static function canAccess(): bool
     {
-        return auth()->check();
+        return static::can('viewAny');
     }
 
     public static function canDelete(Model $record): bool
     {
-        return auth()->user()?->isOwnerPusat() ?? false;
+        return static::can('delete', $record);
     }
 }

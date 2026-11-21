@@ -17,13 +17,16 @@ class CylinderCirculationSummaryWidget extends Widget
     public static function canView(): bool
     {
         $user = auth()->user();
-        return $user && ($user->isOwnerPusat() || $user->isRegionalLeader());
+
+        return $user?->hasPermission('cylinder_circulations.view') ?? false;
     }
 
     public function getMatrix(): array
     {
         $types = ['3kg', '5.5kg', '12kg', '50kg'];
-        $branches = Branch::where('status', 'active')->orderBy('name')->get();
+        $branchQuery = Branch::where('status', 'active')->orderBy('name');
+        auth()->user()?->applyAccessibleBranchScope($branchQuery, 'branches.id');
+        $branches = $branchQuery->get();
 
         $rows = [];
         $totals = array_fill_keys($types, 0);
@@ -52,8 +55,8 @@ class CylinderCirculationSummaryWidget extends Widget
         }
 
         return [
-            'rows'   => $rows,
-            'types'  => $types,
+            'rows' => $rows,
+            'types' => $types,
             'totals' => $totals,
         ];
     }

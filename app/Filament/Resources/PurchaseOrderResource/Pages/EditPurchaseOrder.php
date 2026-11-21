@@ -14,7 +14,8 @@ class EditPurchaseOrder extends EditRecord
     protected function getHeaderActions(): array
     {
         return [
-            Actions\DeleteAction::make(),
+            Actions\DeleteAction::make()
+                ->authorize(fn () => PurchaseOrderResource::canDelete($this->getRecord())),
         ];
     }
 

@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Branch;
 use App\Models\DailySale;
+use App\Models\LpgPrice;
 use App\Models\OperationalCost;
 use App\Models\Receivable;
 use App\Support\XlsxWriter;
@@ -15,23 +16,19 @@ class ExportController extends Controller
     {
         $user = auth()->user();
 
-        if (! $user) {
-            abort(401);
+        if (! $user?->hasPermission('sales.view')) {
+            abort($user ? 403 : 401);
         }
 
         $records = DailySale::query()
             ->with('branch')
-            ->when($request->branch_id,  fn($q) => $q->where('branch_id', $request->branch_id))
-            ->when($request->start_date, fn($q) => $q->whereDate('sale_date', '>=', $request->start_date))
-            ->when($request->end_date,   fn($q) => $q->whereDate('sale_date', '<=', $request->end_date))
-            ->when(
-                ! $user->isOwnerPusat() && ! $user->isRegionalLeader(),
-                fn($q) => $q->where('branch_id', $user->branch_id)
-            )
+            ->when($request->branch_id, fn ($q) => $q->where('branch_id', $request->branch_id))
+            ->when($request->start_date, fn ($q) => $q->whereDate('sale_date', '>=', $request->start_date))
+            ->when($request->end_date, fn ($q) => $q->whereDate('sale_date', '<=', $request->end_date))
             ->orderBy('sale_date', 'desc')
             ->get();
 
-        $xlsx = new XlsxWriter();
+        $xlsx = new XlsxWriter;
         $xlsx->addRow(['Date', 'Branch', 'Cylinder Type', 'Buyer Type', 'Quantity', 'Price/Unit (Rp)', 'Total Revenue (Rp)']);
 
         foreach ($records as $row) {
@@ -49,60 +46,68 @@ class ExportController extends Controller
         $xlsx->addRow([]);
         $xlsx->addRow(['', '', '', '', 'TOTAL', '', (float) $records->sum('total_revenue')]);
 
-        return $xlsx->download('daily-sales-' . now()->format('Y-m-d') . '.xlsx');
+        return $xlsx->download('daily-sales-'.now()->format('Y-m-d').'.xlsx');
     }
 
     public function profitLoss(Request $request)
     {
         $user = auth()->user();
 
-        if (! $user || ! $user->canViewFinance()) {
+        if (! $user?->hasPermission('reports.profit_loss.view')) {
             abort(403, 'Access denied.');
         }
 
-        $branchId  = $request->branch_id ?: (
-            (! $user->isOwnerPusat() && ! $user->isRegionalLeader()) ? $user->branch_id : null
-        );
+        $branchId = $request->branch_id;
+        if (! $branchId && ! $user->canAccessAllBranches()) {
+            $branchIds = $user->accessibleBranchIds();
+            $branchId = $user->branch_id && $user->canAccessBranch((int) $user->branch_id)
+                ? $user->branch_id
+                : (count($branchIds) === 1 ? $branchIds[0] : null);
+        }
         $startDate = $request->start_date ?: now()->startOfMonth()->toDateString();
-        $endDate   = $request->end_date   ?: now()->toDateString();
+        $endDate = $request->end_date ?: now()->toDateString();
 
         $sales = DailySale::query()
             ->with('branch')
             ->whereBetween('sale_date', [$startDate, $endDate])
-            ->when($branchId, fn($q) => $q->where('branch_id', $branchId))
+            ->when($branchId, fn ($q) => $q->where('branch_id', $branchId))
             ->orderBy('sale_date')
             ->get();
 
         $costs = OperationalCost::query()
             ->with('branch')
             ->whereBetween('cost_date', [$startDate, $endDate])
-            ->when($branchId, fn($q) => $q->where('branch_id', $branchId))
+            ->when($branchId, fn ($q) => $q->where('branch_id', $branchId))
             ->orderBy('cost_date')
             ->get();
 
-        $totalHpp     = \App\Models\LpgPrice::totalHppForSales($sales, $branchId);
-        $branchLabel  = $branchId ? (Branch::find($branchId)?->name ?? 'Unknown') : 'All Branches';
+        $totalHpp = LpgPrice::totalHppForSales($sales, $branchId);
+        $branchQuery = Branch::query();
+        $user->applyAccessibleBranchScope($branchQuery, 'branches.id');
+        $branchLabel = $branchId
+            ? ($branchQuery->whereKey($branchId)->value('name') ?? 'Unknown')
+            : 'All Accessible Branches';
         $totalRevenue = (float) $sales->sum('total_revenue');
-        $totalCosts   = (float) $costs->sum('amount');
+        $totalCosts = (float) $costs->sum('amount');
         $totalExpenses = $totalHpp + $totalCosts;
-        $netProfit    = $totalRevenue - $totalExpenses;
-        $margin       = $totalRevenue > 0 ? round(($netProfit / $totalRevenue) * 100, 1) : 0;
+        $netProfit = $totalRevenue - $totalExpenses;
+        $margin = $totalRevenue > 0 ? round(($netProfit / $totalRevenue) * 100, 1) : 0;
 
         $categoryLabels = [
-            'fuel'      => 'Fuel / BBM',
-            'salary'    => 'Salary / Gaji',
+            'fuel' => 'Fuel / BBM',
+            'salary' => 'Salary / Gaji',
             'logistics' => 'Logistics / Ongkir',
-            'levy'      => 'Levy / Retribusi',
-            'other'     => 'Other',
+            'levy' => 'Levy / Retribusi',
+            'other' => 'Other',
         ];
 
-        $xlsx = new XlsxWriter();
+        $xlsx = new XlsxWriter;
 
         // Header block (bold rows 1–4)
         $xlsx->boldRows(4);
         $xlsx->addRow(['PROFIT & LOSS REPORT — SUM Energy Network']);
         $xlsx->addRow(['Branch:', $branchLabel]);
-        $xlsx->addRow(['Period:', $startDate . ' to ' . $endDate]);
+        $xlsx->addRow(['Period:', $startDate.' to '.$endDate]);
         $xlsx->addRow(['Generated:', now()->format('Y-m-d H:i')]);
         $xlsx->addRow([]);
 
@@ -154,38 +159,34 @@ class ExportController extends Controller
         $xlsx->addRow(['Total Costs (Rp):', $totalCosts]);
         $xlsx->addRow(['Total Expenses (Rp):', $totalExpenses]);
         $xlsx->addRow(['Net Profit (Rp):', $netProfit]);
-        $xlsx->addRow(['Margin:', $margin . '%']);
+        $xlsx->addRow(['Margin:', $margin.'%']);
 
-        return $xlsx->download('profit-loss-' . now()->format('Y-m-d') . '.xlsx');
+        return $xlsx->download('profit-loss-'.now()->format('Y-m-d').'.xlsx');
     }
 
     public function receivables(Request $request)
     {
         $user = auth()->user();
 
-        if (! $user || ! $user->canViewFinance()) {
+        if (! $user?->hasPermission('receivables.view')) {
             abort(403, 'Access denied.');
         }
 
         $query = Receivable::query()
             ->with('branch')
-            ->when($request->branch_id,  fn($q) => $q->where('branch_id', $request->branch_id))
-            ->when($request->status,     fn($q) => $q->where('status', $request->status))
-            ->when(
-                ! $user->isOwnerPusat() && ! $user->isRegionalLeader(),
-                fn($q) => $q->where('branch_id', $user->branch_id)
-            )
+            ->when($request->branch_id, fn ($q) => $q->where('branch_id', $request->branch_id))
+            ->when($request->status, fn ($q) => $q->where('status', $request->status))
             ->orderBy('due_date');
 
         $records = $query->get();
 
-        $xlsx = new XlsxWriter();
+        $xlsx = new XlsxWriter;
         $xlsx->addRow(['Branch', 'Buyer Name', 'Type', 'Invoice #', 'Invoice Date', 'Due Date', 'Amount (Rp)', 'Paid (Rp)', 'Balance (Rp)', 'Status', 'Days Overdue']);
 
         $today = today();
 
         foreach ($records as $row) {
-            $balance    = max(0, (float) $row->amount - (float) $row->paid_amount);
+            $balance = max(0, (float) $row->amount - (float) $row->paid_amount);
             $daysOverdue = $row->due_date->lt($today) && $row->status !== 'paid'
                 ? $today->diffInDays($row->due_date)
                 : 0;
@@ -206,8 +207,8 @@ class ExportController extends Controller
         }
 
         $xlsx->addRow([]);
-        $xlsx->addRow(['', '', '', '', '', 'TOTAL BALANCE:', '', '', (float) $records->sum(fn($r) => max(0, $r->amount - $r->paid_amount))]);
+        $xlsx->addRow(['', '', '', '', '', 'TOTAL BALANCE:', '', '', (float) $records->sum(fn ($r) => max(0, $r->amount - $r->paid_amount))]);
 
-        return $xlsx->download('receivables-' . now()->format('Y-m-d') . '.xlsx');
+        return $xlsx->download('receivables-'.now()->format('Y-m-d').'.xlsx');
     }
 }

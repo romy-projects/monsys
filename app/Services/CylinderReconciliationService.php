@@ -57,21 +57,21 @@ class CylinderReconciliationService
             return null;
         }
 
-        $paid      = (int) $po->quantity_ordered;
-        $redeemed  = $so ? (int) $so->quantity_ordered : $paid;
+        $paid = (int) $po->quantity_ordered;
+        $redeemed = $so ? (int) $so->quantity_ordered : $paid;
         $delivered = (int) $lo->quantity_ordered;
 
-        $unredeemed     = max(0, $paid - $redeemed);
+        $unredeemed = max(0, $paid - $redeemed);
         $shortDelivered = max(0, $redeemed - $delivered);
-        $overDelivered  = max(0, $delivered - $redeemed);
+        $overDelivered = max(0, $delivered - $redeemed);
 
         $unitPrice = $this->purchasePrice($po, (int) $branchId);
 
         $caseType = match (true) {
             $shortDelivered > 0 => 'case_2',
-            $unredeemed > 0     => 'case_1',
-            $overDelivered > 0  => 'case_3',
-            default             => 'balanced',
+            $unredeemed > 0 => 'case_1',
+            $overDelivered > 0 => 'case_3',
+            default => 'balanced',
         };
 
         [$reconciliation, $notify] = DB::transaction(function () use (
@@ -86,20 +86,20 @@ class CylinderReconciliationService
             $reconciliation = CylinderReconciliation::updateOrCreate(
                 [
                     'purchase_order_id' => $po->id,
-                    'loading_order_id'  => $lo->id,
+                    'loading_order_id' => $lo->id,
                 ],
                 [
-                    'sales_order_id'           => $so?->id,
-                    'branch_id'                => $branchId,
-                    'cylinder_type'            => $lo->cylinder_type ?: $po->cylinder_type,
-                    'quantity_paid'            => $paid,
-                    'quantity_redeemed'        => $redeemed,
-                    'quantity_delivered'       => $delivered,
-                    'quantity_unredeemed'      => $unredeemed,
+                    'sales_order_id' => $so?->id,
+                    'branch_id' => $branchId,
+                    'cylinder_type' => $lo->cylinder_type ?: $po->cylinder_type,
+                    'quantity_paid' => $paid,
+                    'quantity_redeemed' => $redeemed,
+                    'quantity_delivered' => $delivered,
+                    'quantity_unredeemed' => $unredeemed,
                     'quantity_short_delivered' => $shortDelivered,
-                    'quantity_over_delivered'  => $overDelivered,
-                    'case_type'                => $caseType,
-                    'unit_price'               => $unitPrice,
+                    'quantity_over_delivered' => $overDelivered,
+                    'case_type' => $caseType,
+                    'unit_price' => $unitPrice,
                 ]
             );
 
@@ -153,7 +153,6 @@ class CylinderReconciliationService
             || $previous->case_type !== $caseType
             || (float) $previous->unit_price !== $unitPrice;
     }
-
 
     /**
      * Prefer the SO the LO names, then the latest SO redeemed against this PO.
@@ -219,30 +218,30 @@ class CylinderReconciliationService
 
         if ($unredeemed > 0) {
             $desired[ReconciliationSettlement::TYPE_UNREDEEMED_CREDIT] = [
-                'party'    => ReconciliationSettlement::PARTY_HQ,
+                'party' => ReconciliationSettlement::PARTY_HQ,
                 'quantity' => $unredeemed,
-                'notes'    => "HQ redeemed {$reconciliation->quantity_redeemed} of {$reconciliation->quantity_paid} paid units on PO #{$po->do_number}.",
+                'notes' => "HQ redeemed {$reconciliation->quantity_redeemed} of {$reconciliation->quantity_paid} paid units on PO #{$po->do_number}.",
             ];
         }
 
         if ($shortDelivered > 0) {
             $desired[ReconciliationSettlement::TYPE_SHORT_DELIVERY_CREDIT] = [
-                'party'    => ReconciliationSettlement::PARTY_HQ,
+                'party' => ReconciliationSettlement::PARTY_HQ,
                 'quantity' => $shortDelivered,
-                'notes'    => "Transportir delivered {$reconciliation->quantity_delivered} of {$reconciliation->quantity_redeemed} redeemed units on PO #{$po->do_number}.",
+                'notes' => "Transportir delivered {$reconciliation->quantity_delivered} of {$reconciliation->quantity_redeemed} redeemed units on PO #{$po->do_number}.",
             ];
             $desired[ReconciliationSettlement::TYPE_TRANSPORTIR_CLAIM] = [
-                'party'    => ReconciliationSettlement::PARTY_TRANSPORTIR,
+                'party' => ReconciliationSettlement::PARTY_TRANSPORTIR,
                 'quantity' => $shortDelivered,
-                'notes'    => "Transportir short-delivered {$shortDelivered} units against LO #{$po->do_number}.",
+                'notes' => "Transportir short-delivered {$shortDelivered} units against LO #{$po->do_number}.",
             ];
         }
 
         if ($overDelivered > 0) {
             $desired[ReconciliationSettlement::TYPE_OVER_DELIVERY_CLAIM] = [
-                'party'                    => ReconciliationSettlement::PARTY_BRANCH,
-                'quantity'                 => $overDelivered,
-                'notes'                    => "Branch received {$overDelivered} extra units; claimed on its next delivery at PO #{$po->do_number} price.",
+                'party' => ReconciliationSettlement::PARTY_BRANCH,
+                'quantity' => $overDelivered,
+                'notes' => "Branch received {$overDelivered} extra units; claimed on its next delivery at PO #{$po->do_number} price.",
                 'source_purchase_order_id' => $po->id,
                 'applies_to_next_delivery' => true,
             ];
@@ -252,11 +251,11 @@ class CylinderReconciliationService
             ReconciliationSettlement::updateOrCreate(
                 [
                     'reconciliation_id' => $reconciliation->id,
-                    'settlement_type'   => $type,
+                    'settlement_type' => $type,
                 ],
                 $attributes + [
                     'unit_price' => $unitPrice,
-                    'amount'     => round($attributes['quantity'] * $unitPrice, 2),
+                    'amount' => round($attributes['quantity'] * $unitPrice, 2),
                 ]
             );
         }
@@ -272,4 +271,3 @@ class CylinderReconciliationService
             ->delete();
     }
 }
-

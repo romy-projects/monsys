@@ -8,6 +8,7 @@ use App\Models\Vehicle;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
+use Filament\Support\Enums\FontWeight;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Model;
@@ -55,10 +56,10 @@ class VehicleResource extends Resource
 
                     Forms\Components\Select::make('type')
                         ->options([
-                            'pickup'     => 'Pickup',
-                            'truck'      => 'Truck',
+                            'pickup' => 'Pickup',
+                            'truck' => 'Truck',
                             'motorcycle' => 'Motorcycle',
-                            'other'      => 'Other',
+                            'other' => 'Other',
                         ])
                         ->required()
                         ->default('pickup'),
@@ -102,7 +103,7 @@ class VehicleResource extends Resource
                 Tables\Columns\TextColumn::make('plate_number')
                     ->label('Plate')
                     ->searchable()
-                    ->weight(\Filament\Support\Enums\FontWeight::SemiBold),
+                    ->weight(FontWeight::SemiBold),
 
                 Tables\Columns\TextColumn::make('expedition.name')
                     ->label('Transportir')
@@ -111,12 +112,12 @@ class VehicleResource extends Resource
 
                 Tables\Columns\TextColumn::make('type')
                     ->badge()
-                    ->color(fn($state) => match ($state) {
-                        'truck'  => 'primary',
+                    ->color(fn ($state) => match ($state) {
+                        'truck' => 'primary',
                         'pickup' => 'info',
-                        default  => 'gray',
+                        default => 'gray',
                     })
-                    ->formatStateUsing(fn($state) => ucfirst($state)),
+                    ->formatStateUsing(fn ($state) => ucfirst($state)),
 
                 Tables\Columns\TextColumn::make('driver_name')
                     ->label('Driver')
@@ -128,23 +129,23 @@ class VehicleResource extends Resource
 
                 Tables\Columns\TextColumn::make('capacity_kg')
                     ->label('Capacity')
-                    ->formatStateUsing(fn($state) => $state ? number_format((float) $state, 0) . ' kg' : '—')
+                    ->formatStateUsing(fn ($state) => $state ? number_format((float) $state, 0).' kg' : '—')
                     ->alignRight()
                     ->toggleable(),
 
                 Tables\Columns\TextColumn::make('status')
                     ->badge()
-                    ->color(fn($state) => $state === 'active' ? 'success' : 'gray')
-                    ->formatStateUsing(fn($state) => ucfirst($state)),
+                    ->color(fn ($state) => $state === 'active' ? 'success' : 'gray')
+                    ->formatStateUsing(fn ($state) => ucfirst($state)),
             ])
             ->defaultSort('plate_number')
             ->filters([
                 Tables\Filters\SelectFilter::make('type')
                     ->options([
-                        'pickup'     => 'Pickup',
-                        'truck'      => 'Truck',
+                        'pickup' => 'Pickup',
+                        'truck' => 'Truck',
                         'motorcycle' => 'Motorcycle',
-                        'other'      => 'Other',
+                        'other' => 'Other',
                     ]),
 
                 Tables\Filters\SelectFilter::make('status')
@@ -153,7 +154,7 @@ class VehicleResource extends Resource
                 Tables\Filters\SelectFilter::make('expedition_id')
                     ->label('Transportir')
                     ->options(Expedition::where('status', 'active')->orderBy('name')->pluck('name', 'id'))
-                    ->visible(fn() => auth()->user()?->isOwnerPusat() || auth()->user()?->isRegionalLeader()),
+                    ->visible(fn () => auth()->user()?->hasPermission('expeditions.view') ?? false),
             ])
             ->actions([
                 Tables\Actions\EditAction::make(),
@@ -163,18 +164,7 @@ class VehicleResource extends Resource
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make(),
                 ]),
-            ])
-            ->modifyQueryUsing(function ($query) {
-                $user = auth()->user();
-
-                if (! $user->isOwnerPusat() && ! $user->isRegionalLeader()) {
-                    $query->whereHas(
-                        'expedition',
-                        fn($q) =>
-                        $q->where('status', 'active')
-                    );
-                }
-            });
+            ]);
     }
 
     public static function getRelations(): array
@@ -185,28 +175,24 @@ class VehicleResource extends Resource
     public static function getPages(): array
     {
         return [
-            'index'  => Pages\ListVehicles::route('/'),
+            'index' => Pages\ListVehicles::route('/'),
             'create' => Pages\CreateVehicle::route('/create'),
-            'edit'   => Pages\EditVehicle::route('/{record}/edit'),
+            'edit' => Pages\EditVehicle::route('/{record}/edit'),
         ];
     }
 
     public static function canAccess(): bool
     {
-        // Phase 9: Vehicle & Driver module hidden from all users.
-        // Re-enable later by returning `auth()->check()` instead of `false`.
-        return false;
+        return static::can('viewAny');
     }
 
     public static function canCreate(): bool
     {
-        $user = auth()->user();
-
-        return $user?->isOwnerPusat() || $user?->isRegionalLeader() || $user?->isOwnerCabang();
+        return static::can('create');
     }
 
     public static function canDelete(Model $record): bool
     {
-        return auth()->user()?->isOwnerPusat() ?? false;
+        return static::can('delete', $record);
     }
 }

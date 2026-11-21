@@ -2,14 +2,16 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\ScopesToAccessibleBranches;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Invoice extends Model
 {
-    use HasFactory, SoftDeletes;
+    use HasFactory, ScopesToAccessibleBranches, SoftDeletes;
 
     protected $fillable = [
         'branch_id',
@@ -35,15 +37,15 @@ class Invoice extends Model
     ];
 
     protected $casts = [
-        'issue_date'               => 'date',
-        'due_date'                 => 'date',
-        'unit_price'               => 'decimal:2',
+        'issue_date' => 'date',
+        'due_date' => 'date',
+        'unit_price' => 'decimal:2',
         'transportir_rate_at_sale' => 'decimal:2',
-        'expedition_cost_at_sale'  => 'decimal:2',
-        'expedition_fee_amount'    => 'decimal:2',
-        'total_amount'             => 'decimal:2',
-        'paid_amount'              => 'decimal:2',
-        'quantity'                 => 'integer',
+        'expedition_cost_at_sale' => 'decimal:2',
+        'expedition_fee_amount' => 'decimal:2',
+        'total_amount' => 'decimal:2',
+        'paid_amount' => 'decimal:2',
+        'quantity' => 'integer',
     ];
 
     public function branch(): BelongsTo
@@ -62,7 +64,7 @@ class Invoice extends Model
     }
 
     /** Polymorphic reference: can be a Customer or a Branch. */
-    public function reference(): \Illuminate\Database\Eloquent\Relations\MorphTo
+    public function reference(): MorphTo
     {
         return $this->morphTo();
     }
@@ -112,6 +114,6 @@ class Invoice extends Model
     {
         static::whereIn('status', ['issued', 'partial'])
             ->where('due_date', '<', today())
-            ->each(fn($r) => $r->recalculateStatus());
+            ->each(fn ($r) => $r->recalculateStatus());
     }
 }

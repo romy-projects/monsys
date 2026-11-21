@@ -6,6 +6,7 @@ use App\Models\Branch;
 use App\Models\StockItem;
 use App\Models\StockMutation;
 use Filament\Pages\Page;
+use Illuminate\Database\Eloquent\Collection;
 
 class StockSummaryReport extends Page
 {
@@ -30,20 +31,21 @@ class StockSummaryReport extends Page
     {
         $user = auth()->user();
 
-        if (! $user?->isOwnerPusat() && ! $user?->isRegionalLeader()) {
-            $this->branch_id = $user->branch_id;
+        if ($user !== null && ! $user->canAccessAllBranches()) {
+            $this->branch_id = $user->branch_id && $user->canAccessBranch((int) $user->branch_id)
+                ? (int) $user->branch_id
+                : (count($user->accessibleBranchIds()) === 1 ? $user->accessibleBranchIds()[0] : null);
         }
     }
 
-    public function getBranches(): \Illuminate\Database\Eloquent\Collection
+    public function getBranches(): Collection
     {
         $user = auth()->user();
 
-        if ($user?->isOwnerPusat() || $user?->isRegionalLeader()) {
-            return Branch::active()->orderBy('name')->get();
-        }
+        $query = Branch::active()->orderBy('name');
+        $user?->applyAccessibleBranchScope($query, 'branches.id');
 
-        return Branch::where('id', $user?->branch_id)->get();
+        return $query->get();
     }
 
     /**
@@ -58,11 +60,10 @@ class StockSummaryReport extends Page
         $types = ['3kg', '5.5kg', '12kg', '50kg'];
 
         $branchQuery = Branch::active()->orderBy('name');
+        auth()->user()?->applyAccessibleBranchScope($branchQuery, 'branches.id');
 
         if ($this->branch_id) {
             $branchQuery->where('id', $this->branch_id);
-        } elseif (! auth()->user()?->isOwnerPusat() && ! auth()->user()?->isRegionalLeader()) {
-            $branchQuery->where('id', auth()->user()?->branch_id);
         }
 
         $branches = $branchQuery->get();
@@ -80,7 +81,7 @@ class StockSummaryReport extends Page
         // Get all stock_mutations for these branches
         $mutations = StockMutation::whereIn('branch_id', $branchIds)->get();
 
-        $rows   = [];
+        $rows = [];
         $totals = array_fill_keys($types, ['full' => 0, 'empty' => 0, 'damaged' => 0]);
 
         foreach ($branches as $branch) {
@@ -93,8 +94,8 @@ class StockSummaryReport extends Page
                 $base = $branchStocks->get($type);
 
                 // Start from latest physical count (if exists)
-                $full    = $base?->qty_full ?? 0;
-                $empty   = $base?->qty_empty ?? 0;
+                $full = $base?->qty_full ?? 0;
+                $empty = $base?->qty_empty ?? 0;
                 $damaged = $base?->qty_damaged ?? 0;
                 $baseDate = $base?->recorded_at;
 
@@ -131,14 +132,14 @@ class StockSummaryReport extends Page
                 $full = max(0, $full);
 
                 $row[$type] = [
-                    'full'    => $full,
-                    'empty'   => $empty,
+                    'full' => $full,
+                    'empty' => $empty,
                     'damaged' => $damaged,
-                    'date'    => $baseDate,
+                    'date' => $baseDate,
                 ];
 
-                $totals[$type]['full']    += $full;
-                $totals[$type]['empty']   += $empty;
+                $totals[$type]['full'] += $full;
+                $totals[$type]['empty'] += $empty;
                 $totals[$type]['damaged'] += $damaged;
             }
 
@@ -150,6 +151,6 @@ class StockSummaryReport extends Page
 
     public static function canAccess(): bool
     {
-        return auth()->check();
+        return auth()->user()?->hasPermission('reports.stock_summary.view') ?? false;
     }
 }

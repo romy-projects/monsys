@@ -5,8 +5,8 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\CylinderCirculationResource;
 use App\Http\Traits\ApiResponse;
+use App\Models\Branch;
 use App\Models\CylinderCirculation;
-use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -16,11 +16,12 @@ class CylinderCirculationController extends Controller
 
     public function index(Request $request): JsonResponse
     {
-        $user  = $request->user();
-        $this->authorizeHeadquarters($user);
+        $user = $request->user();
+        abort_unless($user->hasPermission('cylinder_circulations.view'), 403);
         $query = CylinderCirculation::query()->with('branch');
 
         if ($request->filled('branch_id')) {
+            abort_unless($user->canAccessBranch((int) $request->branch_id), 403);
             $query->where('branch_id', $request->branch_id);
         }
         if ($request->filled('cylinder_type')) {
@@ -45,7 +46,11 @@ class CylinderCirculationController extends Controller
     public function show(CylinderCirculation $cylinderCirculation, Request $request): JsonResponse
     {
         $user = $request->user();
-        $this->authorizeHeadquarters($user);
+        abort_unless(
+            $user->hasPermission('cylinder_circulations.view')
+                && $user->canAccessBranch((int) $cylinderCirculation->branch_id),
+            403
+        );
 
         return $this->success(
             new CylinderCirculationResource($cylinderCirculation->load('branch', 'createdBy'))
@@ -55,21 +60,22 @@ class CylinderCirculationController extends Controller
     public function store(Request $request): JsonResponse
     {
         $user = $request->user();
-        $this->authorizeHeadquarters($user);
+        abort_unless($user->hasPermission('cylinder_circulations.create'), 403);
 
         $data = $request->validate([
-            'branch_id'         => ['required', 'exists:branches,id'],
-            'transaction_date'  => ['required', 'date'],
-            'so_number'         => ['nullable', 'string', 'max:100'],
-            'transaction_type'  => ['required', 'in:kirim,bongkar_kosong,pembelian,penyesuaian'],
-            'description'       => ['nullable', 'string'],
-            'cylinder_type'     => ['required', 'in:3kg,5.5kg,12kg,50kg'],
-            'direction'         => ['nullable', 'in:debit,kredit'],
-            'quantity'          => ['required', 'integer', 'min:1'],
-            'container_no'      => ['nullable', 'string', 'max:100'],
-            'handled_by'        => ['nullable', 'string', 'max:200'],
-            'notes'             => ['nullable', 'string'],
+            'branch_id' => ['required', 'exists:branches,id'],
+            'transaction_date' => ['required', 'date'],
+            'so_number' => ['nullable', 'string', 'max:100'],
+            'transaction_type' => ['required', 'in:kirim,bongkar_kosong,pembelian,penyesuaian'],
+            'description' => ['nullable', 'string'],
+            'cylinder_type' => ['required', 'in:3kg,5.5kg,12kg,50kg'],
+            'direction' => ['nullable', 'in:debit,kredit'],
+            'quantity' => ['required', 'integer', 'min:1'],
+            'container_no' => ['nullable', 'string', 'max:100'],
+            'handled_by' => ['nullable', 'string', 'max:200'],
+            'notes' => ['nullable', 'string'],
         ]);
+        abort_unless($user->canAccessBranch((int) $data['branch_id']), 403);
 
         $data['created_by'] = $user->id;
 
@@ -84,22 +90,26 @@ class CylinderCirculationController extends Controller
     {
         $user = $request->user();
 
-        $this->authorizeHeadquarters($user);
+        abort_unless(
+            $user->hasPermission('cylinder_circulations.update')
+                && $user->canAccessBranch((int) $cylinderCirculation->branch_id),
+            403
+        );
         if ($cylinderCirculation->purchase_order_id !== null) {
             return $this->error('PO receipt circulation entries cannot be edited.', 422);
         }
 
         $data = $request->validate([
             'transaction_date' => ['sometimes', 'date'],
-            'so_number'        => ['nullable', 'string', 'max:100'],
+            'so_number' => ['nullable', 'string', 'max:100'],
             'transaction_type' => ['sometimes', 'in:kirim,bongkar_kosong,pembelian,penyesuaian'],
-            'description'      => ['nullable', 'string'],
-            'cylinder_type'    => ['sometimes', 'in:3kg,5.5kg,12kg,50kg'],
-            'direction'        => ['nullable', 'in:debit,kredit'],
-            'quantity'         => ['sometimes', 'integer', 'min:1'],
-            'container_no'     => ['nullable', 'string', 'max:100'],
-            'handled_by'       => ['nullable', 'string', 'max:200'],
-            'notes'            => ['nullable', 'string'],
+            'description' => ['nullable', 'string'],
+            'cylinder_type' => ['sometimes', 'in:3kg,5.5kg,12kg,50kg'],
+            'direction' => ['nullable', 'in:debit,kredit'],
+            'quantity' => ['sometimes', 'integer', 'min:1'],
+            'container_no' => ['nullable', 'string', 'max:100'],
+            'handled_by' => ['nullable', 'string', 'max:200'],
+            'notes' => ['nullable', 'string'],
         ]);
 
         $cylinderCirculation->update($data);
@@ -113,7 +123,11 @@ class CylinderCirculationController extends Controller
     {
         $user = $request->user();
 
-        $this->authorizeHeadquarters($user);
+        abort_unless(
+            $user->hasPermission('cylinder_circulations.delete')
+                && $user->canAccessBranch((int) $cylinderCirculation->branch_id),
+            403
+        );
         if ($cylinderCirculation->purchase_order_id !== null) {
             return $this->error('PO receipt circulation entries cannot be deleted.', 422);
         }
@@ -127,17 +141,19 @@ class CylinderCirculationController extends Controller
     public function summary(Request $request): JsonResponse
     {
         $user = $request->user();
-        $this->authorizeHeadquarters($user);
+        abort_unless($user->hasPermission('cylinder_circulations.view'), 403);
         $types = ['3kg', '5.5kg', '12kg', '50kg'];
 
-        $branches = \App\Models\Branch::where('status', 'active')->orderBy('name')->get();
+        $branchesQuery = Branch::where('status', 'active')->orderBy('name');
+        $user->applyAccessibleBranchScope($branchesQuery, 'branches.id');
+        $branches = $branchesQuery->get();
         $rows = [];
 
         foreach ($branches as $branch) {
             $row = [
-                'branch_id'   => $branch->id,
+                'branch_id' => $branch->id,
                 'branch_name' => $branch->name,
-                'balances'    => [],
+                'balances' => [],
             ];
 
             foreach ($types as $type) {
@@ -159,12 +175,7 @@ class CylinderCirculationController extends Controller
 
         return $this->success([
             'types' => $types,
-            'rows'  => $rows,
+            'rows' => $rows,
         ]);
-    }
-
-    private function authorizeHeadquarters(?User $user): void
-    {
-        abort_unless($user?->isOwnerPusat(), 403);
     }
 }

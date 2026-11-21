@@ -36,18 +36,26 @@ class StockCloseResource extends Resource
 
     public static function form(Form $form): Form
     {
-        $isPusat = auth()->user()?->isOwnerPusat() || auth()->user()?->isRegionalLeader();
+        $user = auth()->user();
+        $branchIds = $user?->accessibleBranchIds() ?? [];
+        $branchQuery = Branch::active()->orderBy('name');
+        $user?->applyAccessibleBranchScope($branchQuery, 'branches.id');
+        $branchOptions = $branchQuery->pluck('name', 'id');
+        $defaultBranchId = $user?->branch_id !== null && in_array((int) $user->branch_id, $branchIds, true)
+            ? $user->branch_id
+            : ($branchIds[0] ?? null);
+        $singleBranch = count($branchIds) === 1;
 
         return $form->schema([
             Forms\Components\Section::make('Close Details')
                 ->schema([
                     Forms\Components\Select::make('branch_id')
                         ->label('Branch')
-                        ->options(Branch::active()->orderBy('name')->pluck('name', 'id'))
+                        ->options($branchOptions)
                         ->searchable()
                         ->required()
-                        ->default(fn () => auth()->user()->branch_id)
-                        ->disabled(! $isPusat)
+                        ->default($defaultBranchId)
+                        ->disabled($singleBranch)
                         ->dehydrated()
                         ->columnSpan(2),
 
@@ -59,10 +67,10 @@ class StockCloseResource extends Resource
 
                     Forms\Components\Select::make('cylinder_type')
                         ->options([
-                            '3kg'   => '3 kg',
+                            '3kg' => '3 kg',
                             '5.5kg' => '5.5 kg',
-                            '12kg'  => '12 kg',
-                            '50kg'  => '50 kg',
+                            '12kg' => '12 kg',
+                            '50kg' => '50 kg',
                         ])
                         ->required(),
 
@@ -130,10 +138,10 @@ class StockCloseResource extends Resource
                 Tables\Columns\TextColumn::make('status')
                     ->badge()
                     ->color(fn (string $state): string => match ($state) {
-                        'draft'     => 'gray',
+                        'draft' => 'gray',
                         'submitted' => 'warning',
-                        'verified'  => 'success',
-                        default     => 'gray',
+                        'verified' => 'success',
+                        default => 'gray',
                     })
                     ->formatStateUsing(fn ($state) => ucfirst($state)),
 
@@ -150,37 +158,44 @@ class StockCloseResource extends Resource
             ->filters([
                 Tables\Filters\SelectFilter::make('status')
                     ->options([
-                        'draft'     => 'Draft',
+                        'draft' => 'Draft',
                         'submitted' => 'Submitted',
-                        'verified'  => 'Verified',
+                        'verified' => 'Verified',
                     ]),
 
                 Tables\Filters\SelectFilter::make('cylinder_type')
                     ->options([
-                        '3kg'   => '3 kg',
+                        '3kg' => '3 kg',
                         '5.5kg' => '5.5 kg',
-                        '12kg'  => '12 kg',
-                        '50kg'  => '50 kg',
+                        '12kg' => '12 kg',
+                        '50kg' => '50 kg',
                     ]),
 
                 Tables\Filters\SelectFilter::make('branch_id')
                     ->label('Branch')
-                    ->options(Branch::active()->orderBy('name')->pluck('name', 'id'))
-                    ->visible(fn () => auth()->user()?->isOwnerPusat() || auth()->user()?->isRegionalLeader()),
+                    ->options(function () {
+                        $query = Branch::active()->orderBy('name');
+                        auth()->user()?->applyAccessibleBranchScope($query, 'branches.id');
+
+                        return $query->pluck('name', 'id');
+                    })
+                    ->visible(fn () => auth()->user()?->canAccessAllBranches() || count(auth()->user()?->accessibleBranchIds() ?? []) > 1),
             ])
             ->actions([
                 Tables\Actions\Action::make('submit')
                     ->label('Submit')
                     ->icon('heroicon-o-paper-airplane')
                     ->color('warning')
-                    ->visible(fn (StockClose $record) =>
-                        $record->status === 'draft' &&
-                        ($record->branch_id === auth()->user()?->branch_id ||
-                         auth()->user()?->isOwnerPusat() ||
-                         auth()->user()?->isRegionalLeader())
+                    ->visible(fn (StockClose $record) => $record->status === 'draft' &&
+                        auth()->user()?->hasPermission('stock_closes.create') &&
+                        auth()->user()?->canAccessBranch((int) $record->branch_id)
+                    )
+                    ->authorize(fn (StockClose $record) => $record->status === 'draft' &&
+                        auth()->user()?->hasPermission('stock_closes.create') &&
+                        auth()->user()?->canAccessBranch((int) $record->branch_id)
                     )
                     ->action(fn (StockClose $record) => $record->update([
-                        'status'       => 'submitted',
+                        'status' => 'submitted',
                         'submitted_by' => auth()->id(),
                         'submitted_at' => now(),
                     ]))
@@ -192,12 +207,16 @@ class StockCloseResource extends Resource
                     ->label('Verify')
                     ->icon('heroicon-o-check-badge')
                     ->color('success')
-                    ->visible(fn (StockClose $record) =>
-                        $record->status === 'submitted' &&
-                        (auth()->user()?->isOwnerPusat() || auth()->user()?->isRegionalLeader())
+                    ->visible(fn (StockClose $record) => $record->status === 'submitted' &&
+                        auth()->user()?->hasPermission('stock_closes.verify') &&
+                        auth()->user()?->canAccessBranch((int) $record->branch_id)
+                    )
+                    ->authorize(fn (StockClose $record) => $record->status === 'submitted' &&
+                        auth()->user()?->hasPermission('stock_closes.verify') &&
+                        auth()->user()?->canAccessBranch((int) $record->branch_id)
                     )
                     ->action(fn (StockClose $record) => $record->update([
-                        'status'      => 'verified',
+                        'status' => 'verified',
                         'verified_by' => auth()->id(),
                         'verified_at' => now(),
                     ]))
@@ -205,20 +224,15 @@ class StockCloseResource extends Resource
                     ->modalHeading('Verify Stock Close?'),
 
                 Tables\Actions\EditAction::make()
-                    ->visible(fn (StockClose $record) => $record->status === 'draft'),
+                    ->visible(fn (StockClose $record) => static::canEdit($record))
+                    ->authorize(fn (StockClose $record) => static::canEdit($record)),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make(),
                 ]),
             ])
-            ->modifyQueryUsing(function ($query) {
-                $user = auth()->user();
-
-                if (! $user->isOwnerPusat() && ! $user->isRegionalLeader()) {
-                    $query->where('branch_id', $user->branch_id);
-                }
-            });
+            ->modifyQueryUsing(fn ($query) => $query);
     }
 
     public static function getRelations(): array
@@ -229,27 +243,24 @@ class StockCloseResource extends Resource
     public static function getPages(): array
     {
         return [
-            'index'  => Pages\ListStockCloses::route('/'),
+            'index' => Pages\ListStockCloses::route('/'),
             'create' => Pages\CreateStockClose::route('/create'),
-            'edit'   => Pages\EditStockClose::route('/{record}/edit'),
+            'edit' => Pages\EditStockClose::route('/{record}/edit'),
         ];
     }
 
     public static function canAccess(): bool
     {
-        return auth()->check();
+        return static::can('viewAny');
     }
 
     public static function canEdit(Model $record): bool
     {
-        $user = auth()->user();
-
-        return $record->status === 'draft' &&
-               ($user?->isOwnerPusat() || $record->branch_id === $user?->branch_id);
+        return $record->status === 'draft' && static::can('update', $record);
     }
 
     public static function canDelete(Model $record): bool
     {
-        return auth()->user()?->isOwnerPusat() ?? false;
+        return static::can('delete', $record);
     }
 }

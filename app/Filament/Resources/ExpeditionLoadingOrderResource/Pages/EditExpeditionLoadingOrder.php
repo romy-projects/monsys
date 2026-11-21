@@ -15,8 +15,12 @@ class EditExpeditionLoadingOrder extends EditRecord
         // Editing an Expedition LO must never turn it into a Transportir LO,
         // nor move the fee onto the transportir.
         $data['document_type'] = 'lo';
-        $data['lo_kind']       = 'expedition';
+        $data['lo_kind'] = 'expedition';
         $data['cost_borne_by'] = 'sum';
+        abort_unless(
+            auth()->user()->canAccessBranch((int) ($data['destination_branch_id'] ?? $this->getRecord()->destination_branch_id)),
+            403
+        );
 
         return $data;
     }
@@ -24,7 +28,8 @@ class EditExpeditionLoadingOrder extends EditRecord
     protected function getHeaderActions(): array
     {
         return [
-            Actions\DeleteAction::make(),
+            Actions\DeleteAction::make()
+                ->authorize(fn () => ExpeditionLoadingOrderResource::canDelete($this->getRecord())),
         ];
     }
 }

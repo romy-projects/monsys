@@ -17,15 +17,17 @@ class CostController extends Controller
     {
         $user = $request->user();
 
-        if (! $user->canViewFinance()) {
-            return $this->forbidden('Finance data is restricted to owners and managers.');
+        if (! $user->hasPermission('operational_costs.view')) {
+            return $this->forbidden();
         }
 
         $query = OperationalCost::query()->with(['branch', 'createdBy'])->orderByDesc('cost_date');
 
-        if (! $user->isOwnerPusat() && ! $user->isRegionalLeader()) {
-            $query->where('branch_id', $user->branch_id);
-        } elseif ($request->filled('branch_id')) {
+        if ($request->filled('branch_id')) {
+            if (! $user->canAccessBranch((int) $request->branch_id)) {
+                return $this->forbidden();
+            }
+
             $query->where('branch_id', $request->branch_id);
         }
 
@@ -46,22 +48,24 @@ class CostController extends Controller
     {
         $user = $request->user();
 
-        if (! $user->canViewFinance()) {
+        if (! $user->hasPermission('operational_costs.create')) {
             return $this->forbidden('Finance data is restricted to owners and managers.');
         }
 
         $data = $request->validate([
-            'branch_id'     => ['nullable', 'exists:branches,id'],
+            'branch_id' => ['nullable', 'exists:branches,id'],
             'cost_category' => ['required', 'in:fuel,salary,logistics,levy,other'],
-            'description'   => ['required', 'string', 'max:255'],
-            'amount'        => ['required', 'numeric', 'min:0'],
-            'cost_date'     => ['required', 'date'],
-            'notes'         => ['nullable', 'string'],
+            'description' => ['required', 'string', 'max:255'],
+            'amount' => ['required', 'numeric', 'min:0'],
+            'cost_date' => ['required', 'date'],
+            'notes' => ['nullable', 'string'],
         ]);
 
-        if (! $user->isOwnerPusat() && ! $user->isRegionalLeader()) {
-            $data['branch_id'] = $user->branch_id;
+        $branchId = (int) ($data['branch_id'] ?? $user->branch_id ?? 0);
+        if (! $user->canAccessBranch($branchId)) {
+            return $this->forbidden();
         }
+        $data['branch_id'] = $branchId;
         $data['created_by'] = $user->id;
 
         $cost = OperationalCost::create($data);
@@ -73,16 +77,20 @@ class CostController extends Controller
     {
         $user = $request->user();
 
-        if (! $user->canViewFinance()) {
+        if (! $user->hasPermission('operational_costs.update')) {
+            return $this->forbidden();
+        }
+
+        if (! $user->canAccessBranch((int) $operationalCost->branch_id)) {
             return $this->forbidden();
         }
 
         $data = $request->validate([
             'cost_category' => ['sometimes', 'in:fuel,salary,logistics,levy,other'],
-            'description'   => ['sometimes', 'string', 'max:255'],
-            'amount'        => ['sometimes', 'numeric', 'min:0'],
-            'cost_date'     => ['sometimes', 'date'],
-            'notes'         => ['nullable', 'string'],
+            'description' => ['sometimes', 'string', 'max:255'],
+            'amount' => ['sometimes', 'numeric', 'min:0'],
+            'cost_date' => ['sometimes', 'date'],
+            'notes' => ['nullable', 'string'],
         ]);
 
         $operationalCost->update($data);
@@ -94,7 +102,8 @@ class CostController extends Controller
     {
         $user = $request->user();
 
-        if (! $user->isOwnerPusat()) {
+        if (! $user->hasPermission('operational_costs.delete')
+            || ! $user->canAccessBranch((int) $operationalCost->branch_id)) {
             return $this->forbidden();
         }
 

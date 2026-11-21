@@ -13,12 +13,16 @@ class CreateReceivable extends CreateRecord
     {
         $user = auth()->user();
 
-        if (! $user->isOwnerPusat() && ! $user->isRegionalLeader()) {
+        if (empty($data['branch_id'])) {
             $data['branch_id'] = $user->branch_id;
         }
 
+        if (! $user->canAccessBranch((int) $data['branch_id'])) {
+            abort(403, 'You cannot create receivables for this branch.');
+        }
+
         $data['created_by'] = $user->id;
-        $data['status']     = 'outstanding';
+        $data['status'] = 'outstanding';
 
         return $data;
     }

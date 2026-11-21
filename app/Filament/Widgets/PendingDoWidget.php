@@ -15,11 +15,19 @@ class PendingDoWidget extends BaseWidget
 
     protected int|string|array $columnSpan = 'full';
 
+    public static function canView(): bool
+    {
+        return auth()->user()?->hasPermission('purchase_orders.approve') ?? false;
+    }
+
     public function table(Table $table): Table
     {
+        $user = auth()->user();
+
         return $table
             ->query(
                 DeliveryOrder::purchaseOrders()
+                    ->accessibleTo($user)
                     ->with(['originBranch', 'destinationBranch', 'expedition'])
                     ->where('status', 'pending_approval')
                     ->latest('order_date')
@@ -43,7 +51,7 @@ class PendingDoWidget extends BaseWidget
 
                 Tables\Columns\TextColumn::make('quantity_ordered')
                     ->label('Qty')
-                    ->formatStateUsing(fn ($state) => number_format($state) . ' pcs'),
+                    ->formatStateUsing(fn ($state) => number_format($state).' pcs'),
 
                 Tables\Columns\TextColumn::make('order_date')
                     ->label('Order Date')
@@ -54,9 +62,9 @@ class PendingDoWidget extends BaseWidget
                     ->colors([
                         'warning' => 'pending_approval',
                         'success' => 'approved',
-                        'info'    => 'in_transit',
+                        'info' => 'in_transit',
                         'primary' => 'delivered',
-                        'danger'  => 'cancelled',
+                        'danger' => 'cancelled',
                     ]),
             ])
             ->actions([
@@ -64,10 +72,15 @@ class PendingDoWidget extends BaseWidget
                     ->label('Approve')
                     ->icon('heroicon-o-check-circle')
                     ->color('success')
-                    ->visible(fn () => auth()->user()?->canApproveOrders())
+                    ->visible(fn (DeliveryOrder $record) => auth()->user()?->hasPermission('purchase_orders.approve') &&
+                        auth()->user()?->canAccessModelRecord($record, 'update')
+                    )
+                    ->authorize(fn (DeliveryOrder $record) => auth()->user()?->hasPermission('purchase_orders.approve') &&
+                        auth()->user()?->canAccessModelRecord($record, 'update')
+                    )
                     ->action(function (DeliveryOrder $record) {
                         $record->update([
-                            'status'      => 'approved',
+                            'status' => 'approved',
                             'approved_by' => auth()->id(),
                             'approved_at' => now(),
                         ]);
@@ -80,7 +93,12 @@ class PendingDoWidget extends BaseWidget
                     ->label('Reject')
                     ->icon('heroicon-o-x-circle')
                     ->color('danger')
-                    ->visible(fn () => auth()->user()?->canApproveOrders())
+                    ->visible(fn (DeliveryOrder $record) => auth()->user()?->hasPermission('purchase_orders.cancel') &&
+                        auth()->user()?->canAccessModelRecord($record, 'update')
+                    )
+                    ->authorize(fn (DeliveryOrder $record) => auth()->user()?->hasPermission('purchase_orders.cancel') &&
+                        auth()->user()?->canAccessModelRecord($record, 'update')
+                    )
                     ->action(fn (DeliveryOrder $record) => $record->update(['status' => 'cancelled']))
                     ->requiresConfirmation(),
             ])

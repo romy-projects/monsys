@@ -16,22 +16,21 @@ class SalesOrderController extends Controller
 {
     use ApiResponse;
 
-    public function __construct(private readonly DocumentNumberService $documentNumbers)
-    {
-    }
+    public function __construct(private readonly DocumentNumberService $documentNumbers) {}
 
     /**
      * List Sales Orders (SO) — Main Branch orders to Pertamina.
      */
     public function index(Request $request): JsonResponse
     {
-        $user  = $request->user();
-        $query = DeliveryOrder::salesOrders()
-            ->with(['originBranch', 'destinationBranch', 'transportir', 'expedition', 'vehicle']);
-
-        if (! $user->isOwnerPusat() && ! $user->isRegionalLeader()) {
-            $query->where('origin_branch_id', $user->branch_id);
+        $user = $request->user();
+        if (! $user->hasPermission('sales_orders.view')) {
+            return $this->forbidden();
         }
+
+        $query = DeliveryOrder::salesOrders()
+            ->accessibleTo($user)
+            ->with(['originBranch', 'destinationBranch', 'transportir', 'expedition', 'vehicle']);
 
         if ($request->filled('status')) {
             $query->where('status', $request->status);
@@ -69,33 +68,36 @@ class SalesOrderController extends Controller
     {
         $user = $request->user();
 
-        if (! $user->isOwnerPusat() && ! $user->isRegionalLeader()) {
+        if (! $user->hasPermission('sales_orders.create')) {
             return $this->forbidden('Only Pusat/Regional can create Sales Orders.');
         }
 
         $mainBranch = Branch::mainBranch()->first();
+        if ($mainBranch === null || ! $user->canAccessBranch((int) $mainBranch->id)) {
+            return $this->forbidden();
+        }
 
         $data = $request->validate([
-            'do_number'         => ['nullable', 'string', 'max:50', 'unique:delivery_orders,do_number'],
-            'order_date'        => ['required', 'date'],
-            'cylinder_type'     => ['required', 'in:3kg,5.5kg,12kg,50kg'],
-            'quantity_ordered'  => ['required', 'integer', 'min:1'],
+            'do_number' => ['nullable', 'string', 'max:50', 'unique:delivery_orders,do_number'],
+            'order_date' => ['required', 'date'],
+            'cylinder_type' => ['required', 'in:3kg,5.5kg,12kg,50kg'],
+            'quantity_ordered' => ['required', 'integer', 'min:1'],
             'counterparty_name' => ['nullable', 'string', 'max:200'],
-            'transportir_id'    => ['nullable', 'exists:transportirs,id'],
-            'expedition_id'     => ['nullable', 'exists:expeditions,id'],
-            'vehicle_id'        => ['nullable', 'exists:vehicles,id'],
-            'transportir_name'  => ['nullable', 'string', 'max:200'],
-            'container_number'  => ['nullable', 'string', 'max:100'],
-            'eta'               => ['nullable', 'date'],
-            'notes'             => ['nullable', 'string'],
+            'transportir_id' => ['nullable', 'exists:transportirs,id'],
+            'expedition_id' => ['nullable', 'exists:expeditions,id'],
+            'vehicle_id' => ['nullable', 'exists:vehicles,id'],
+            'transportir_name' => ['nullable', 'string', 'max:200'],
+            'container_number' => ['nullable', 'string', 'max:100'],
+            'eta' => ['nullable', 'date'],
+            'notes' => ['nullable', 'string'],
         ]);
 
-        $data['document_type']     = 'so';
+        $data['document_type'] = 'so';
         $data['counterparty_type'] = 'pertamina';
         $data['counterparty_name'] = $data['counterparty_name'] ?? 'Pertamina';
-        $data['origin_branch_id']  = $mainBranch?->id;
-        $data['requested_by']      = $user->id;
-        $data['status']            = 'draft';
+        $data['origin_branch_id'] = $mainBranch?->id;
+        $data['requested_by'] = $user->id;
+        $data['status'] = 'draft';
 
         // Allocate the SO number server-side when the client omits it (allocation + insert
         // in one transaction so concurrent creates queue instead of colliding).
@@ -117,6 +119,9 @@ class SalesOrderController extends Controller
     {
         $user = $request->user();
 
+        if (! $this->canManage($user, $deliveryOrder, 'sales_orders.update')) {
+            return $this->forbidden();
+        }
         if ($deliveryOrder->document_type !== 'so') {
             return $this->error('Not a Sales Order.', 422);
         }
@@ -125,16 +130,16 @@ class SalesOrderController extends Controller
         }
 
         $data = $request->validate([
-            'cylinder_type'     => ['sometimes', 'in:3kg,5.5kg,12kg,50kg'],
-            'quantity_ordered'  => ['sometimes', 'integer', 'min:1'],
+            'cylinder_type' => ['sometimes', 'in:3kg,5.5kg,12kg,50kg'],
+            'quantity_ordered' => ['sometimes', 'integer', 'min:1'],
             'counterparty_name' => ['nullable', 'string', 'max:200'],
-            'transportir_id'    => ['nullable', 'exists:transportirs,id'],
-            'expedition_id'     => ['nullable', 'exists:expeditions,id'],
-            'vehicle_id'        => ['nullable', 'exists:vehicles,id'],
-            'transportir_name'  => ['nullable', 'string', 'max:200'],
-            'container_number'  => ['nullable', 'string', 'max:100'],
-            'eta'               => ['nullable', 'date'],
-            'notes'             => ['nullable', 'string'],
+            'transportir_id' => ['nullable', 'exists:transportirs,id'],
+            'expedition_id' => ['nullable', 'exists:expeditions,id'],
+            'vehicle_id' => ['nullable', 'exists:vehicles,id'],
+            'transportir_name' => ['nullable', 'string', 'max:200'],
+            'container_number' => ['nullable', 'string', 'max:100'],
+            'eta' => ['nullable', 'date'],
+            'notes' => ['nullable', 'string'],
         ]);
 
         $deliveryOrder->update($data);
@@ -147,6 +152,9 @@ class SalesOrderController extends Controller
      */
     public function submit(DeliveryOrder $deliveryOrder, Request $request): JsonResponse
     {
+        if (! $this->canManage($request->user(), $deliveryOrder, 'sales_orders.submit')) {
+            return $this->forbidden();
+        }
         if ($deliveryOrder->document_type !== 'so') {
             return $this->error('Not a Sales Order.', 422);
         }
@@ -166,7 +174,7 @@ class SalesOrderController extends Controller
     {
         $user = $request->user();
 
-        if (! $user->canApproveOrders()) {
+        if (! $this->canManage($user, $deliveryOrder, 'sales_orders.approve')) {
             return $this->forbidden();
         }
         if ($deliveryOrder->document_type !== 'so') {
@@ -177,7 +185,7 @@ class SalesOrderController extends Controller
         }
 
         $deliveryOrder->update([
-            'status'      => 'approved',
+            'status' => 'approved',
             'approved_by' => $user->id,
             'approved_at' => now(),
         ]);
@@ -192,7 +200,7 @@ class SalesOrderController extends Controller
     {
         $user = $request->user();
 
-        if (! $user->canApproveOrders()) {
+        if (! $this->canManage($user, $deliveryOrder, 'sales_orders.cancel')) {
             return $this->forbidden();
         }
         if ($deliveryOrder->document_type !== 'so') {
@@ -214,7 +222,7 @@ class SalesOrderController extends Controller
     {
         $user = $request->user();
 
-        if (! $user->isOwnerPusat() && ! $user->isRegionalLeader()) {
+        if (! $this->canManage($user, $deliveryOrder, 'sales_orders.delete')) {
             return $this->forbidden();
         }
         if ($deliveryOrder->document_type !== 'so') {
@@ -231,8 +239,13 @@ class SalesOrderController extends Controller
 
     private function authorizeView($user, DeliveryOrder $do): void
     {
-        if ($user->isOwnerPusat() || $user->isRegionalLeader()) return;
-        if ($do->origin_branch_id === $user->branch_id) return;
-        abort(403);
+        abort_unless($this->canManage($user, $do, 'sales_orders.view'), 403);
+    }
+
+    private function canManage($user, DeliveryOrder $order, string $permission): bool
+    {
+        return $order->document_type === 'so'
+            && $user->hasPermission($permission)
+            && $user->canAccessModelRecord($order, $permission === 'sales_orders.view' ? 'view' : 'update');
     }
 }

@@ -14,6 +14,7 @@ use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Validation\ValidationException;
 
 class PayableResource extends Resource
@@ -40,9 +41,6 @@ class PayableResource extends Resource
 
     public static function form(Form $form): Form
     {
-        $user = auth()->user();
-        $isPusat = $user->isOwnerPusat() || $user->isRegionalLeader();
-
         return $form->schema([
             Forms\Components\Section::make('Payable Details')
                 ->schema([
@@ -69,7 +67,7 @@ class PayableResource extends Resource
                                 ->where('transportir_id', $transportirId)
                                 ->orderBy('do_number')
                                 ->get()
-                                ->mapWithKeys(fn($lo) => [$lo->id => $lo->do_number . ' - ' . $lo->cylinder_type . ' (' . number_format((float) $lo->quantity_ordered) . ' pcs)']);
+                                ->mapWithKeys(fn ($lo) => [$lo->id => $lo->do_number.' - '.$lo->cylinder_type.' ('.number_format((float) $lo->quantity_ordered).' pcs)']);
                         })
                         ->searchable()
                         ->nullable()
@@ -95,8 +93,8 @@ class PayableResource extends Resource
 
                     Forms\Components\Placeholder::make('paid_amount_display')
                         ->label('Paid Amount (Rp)')
-                        ->content(fn(?Payable $record) => $record
-                            ? 'Rp ' . number_format((float) $record->paid_amount, 0, ',', '.') . ' dari Rp ' . number_format((float) $record->amount, 0, ',', '.')
+                        ->content(fn (?Payable $record) => $record
+                            ? 'Rp '.number_format((float) $record->paid_amount, 0, ',', '.').' dari Rp '.number_format((float) $record->amount, 0, ',', '.')
                             : 'Rp 0')
                         ->helperText('Diisi otomatis dari riwayat pembayaran (aksi Catat Pembayaran).')
                         ->columnSpan(1),
@@ -108,10 +106,10 @@ class PayableResource extends Resource
 
                     Forms\Components\Placeholder::make('status_display')
                         ->label('Status')
-                        ->content(fn(?Payable $record) => match ($record?->payment_state) {
-                            'paid'    => 'Lunas',
+                        ->content(fn (?Payable $record) => match ($record?->payment_state) {
+                            'paid' => 'Lunas',
                             'partial' => 'Sebagian',
-                            default   => 'Pending',
+                            default => 'Pending',
                         })
                         ->columnSpan(1),
                 ])->columns(2),
@@ -120,7 +118,7 @@ class PayableResource extends Resource
 
     public static function table(Table $table): Table
     {
-        $fmt = fn($state) => 'Rp ' . number_format((float) $state, 0, ',', '.');
+        $fmt = fn ($state) => 'Rp '.number_format((float) $state, 0, ',', '.');
 
         return $table
             ->columns([
@@ -156,9 +154,9 @@ class PayableResource extends Resource
 
                 Tables\Columns\TextColumn::make('balance')
                     ->label('Balance')
-                    ->getStateUsing(fn($record) => max(0, (float) $record->amount - (float) $record->paid_amount))
+                    ->getStateUsing(fn ($record) => max(0, (float) $record->amount - (float) $record->paid_amount))
                     ->formatStateUsing($fmt)
-                    ->color(fn($state) => $state > 0 ? 'danger' : 'success'),
+                    ->color(fn ($state) => $state > 0 ? 'danger' : 'success'),
 
                 Tables\Columns\TextColumn::make('due_date')
                     ->label('Due Date')
@@ -168,16 +166,16 @@ class PayableResource extends Resource
                 Tables\Columns\TextColumn::make('status')
                     ->label('Status')
                     ->badge()
-                    ->getStateUsing(fn(Payable $record) => $record->payment_state)
-                    ->color(fn(string $state): string => match ($state) {
-                        'paid'    => 'success',
+                    ->getStateUsing(fn (Payable $record) => $record->payment_state)
+                    ->color(fn (string $state): string => match ($state) {
+                        'paid' => 'success',
                         'partial' => 'warning',
-                        default   => 'gray',
+                        default => 'gray',
                     })
-                    ->formatStateUsing(fn(string $state) => match ($state) {
-                        'paid'    => 'Lunas',
+                    ->formatStateUsing(fn (string $state) => match ($state) {
+                        'paid' => 'Lunas',
                         'partial' => 'Sebagian',
-                        default   => 'Pending',
+                        default => 'Pending',
                     }),
             ])
             ->defaultSort('created_at', 'desc')
@@ -185,7 +183,7 @@ class PayableResource extends Resource
                 Tables\Filters\SelectFilter::make('status')
                     ->options([
                         'pending' => 'Pending',
-                        'paid'    => 'Lunas',
+                        'paid' => 'Lunas',
                     ]),
 
                 Tables\Filters\SelectFilter::make('transportir_id')
@@ -197,8 +195,12 @@ class PayableResource extends Resource
                     ->label('Catat Pembayaran')
                     ->icon('heroicon-o-banknotes')
                     ->color('success')
-                    ->visible(fn(Payable $record) => $record->balance > 0)
-                    ->form(fn(Payable $record): array => [
+                    ->visible(fn (Payable $record) => auth()->user()?->hasPermission('payables.record_payment') && $record->balance > 0
+                    )
+                    ->authorize(fn (Payable $record) => auth()->user()?->hasPermission('payables.record_payment') &&
+                        auth()->user()?->canAccessModelRecord($record, 'update')
+                    )
+                    ->form(fn (Payable $record): array => [
                         Forms\Components\DatePicker::make('paid_on')
                             ->label('Tanggal Bayar')
                             ->default(today())
@@ -209,7 +211,7 @@ class PayableResource extends Resource
                             ->prefix('Rp')
                             ->minValue(0.01)
                             ->maxValue((float) $record->balance)
-                            ->helperText('Sisa tagihan: Rp ' . number_format((float) $record->balance, 0, ',', '.'))
+                            ->helperText('Sisa tagihan: Rp '.number_format((float) $record->balance, 0, ',', '.'))
                             ->required(),
                         Forms\Components\Select::make('method')
                             ->label('Metode')
@@ -243,12 +245,16 @@ class PayableResource extends Resource
                     ->label('Lunasi')
                     ->icon('heroicon-o-check-circle')
                     ->color('success')
-                    ->visible(fn(Payable $record) => $record->balance > 0)
+                    ->visible(fn (Payable $record) => auth()->user()?->hasPermission('payables.record_payment') && $record->balance > 0
+                    )
+                    ->authorize(fn (Payable $record) => auth()->user()?->hasPermission('payables.record_payment') &&
+                        auth()->user()?->canAccessModelRecord($record, 'update')
+                    )
                     ->action(function (Payable $record) {
                         app(PaymentLedger::class)->recordPayable($record, [
                             'amount' => (float) $record->balance,
                             'method' => 'other',
-                            'notes'  => 'Pelunasan penuh (Mark as Paid)',
+                            'notes' => 'Pelunasan penuh (Mark as Paid)',
                         ], auth()->id());
                     })
                     ->requiresConfirmation()
@@ -260,9 +266,9 @@ class PayableResource extends Resource
                     ->label('Riwayat')
                     ->icon('heroicon-o-list-bullet')
                     ->color('gray')
-                    ->visible(fn(Payable $record) => $record->payments()->exists())
-                    ->modalHeading(fn(Payable $record) => 'Riwayat Pembayaran - ' . ($record->deliveryOrder?->do_number ?? $record->description))
-                    ->modalContent(fn(Payable $record) => view('filament.finance.payment-history', [
+                    ->visible(fn (Payable $record) => $record->payments()->exists())
+                    ->modalHeading(fn (Payable $record) => 'Riwayat Pembayaran - '.($record->deliveryOrder?->do_number ?? $record->description))
+                    ->modalContent(fn (Payable $record) => view('filament.finance.payment-history', [
                         'payments' => $record->payments()->with('createdBy')->orderByDesc('paid_on')->orderByDesc('id')->get(),
                     ]))
                     ->modalSubmitAction(false)
@@ -272,18 +278,22 @@ class PayableResource extends Resource
                     ->label('Batalkan Pembayaran')
                     ->icon('heroicon-o-arrow-uturn-left')
                     ->color('danger')
-                    ->visible(fn(Payable $record) => (auth()->user()?->isOwnerPusat() ?? false) && $record->payments()->exists())
-                    ->form(fn(Payable $record): array => [
+                    ->visible(fn (Payable $record) => auth()->user()?->hasPermission('payables.reverse_payment') && $record->payments()->exists()
+                    )
+                    ->authorize(fn (Payable $record) => auth()->user()?->hasPermission('payables.reverse_payment') &&
+                        auth()->user()?->canAccessModelRecord($record, 'update')
+                    )
+                    ->form(fn (Payable $record): array => [
                         Forms\Components\Select::make('payment_id')
                             ->label('Pembayaran yang dibatalkan')
                             ->options($record->payments()
                                 ->orderByDesc('paid_on')
                                 ->orderByDesc('id')
                                 ->get()
-                                ->mapWithKeys(fn(PayablePayment $payment) => [
+                                ->mapWithKeys(fn (PayablePayment $payment) => [
                                     $payment->id => $payment->paid_on?->format('d M Y')
-                                        . ' - Rp ' . number_format((float) $payment->amount, 0, ',', '.')
-                                        . ' (' . $payment->method_label . ')',
+                                        .' - Rp '.number_format((float) $payment->amount, 0, ',', '.')
+                                        .' ('.$payment->method_label.')',
                                 ]))
                             ->required(),
                     ])
@@ -300,7 +310,7 @@ class PayableResource extends Resource
                     ->successNotificationTitle('Pembayaran dibatalkan'),
 
                 Tables\Actions\EditAction::make()
-                    ->visible(fn(Payable $record) => $record->status !== 'paid'),
+                    ->visible(fn (Payable $record) => $record->status !== 'paid'),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
@@ -317,24 +327,40 @@ class PayableResource extends Resource
     public static function getPages(): array
     {
         return [
-            'index'  => Pages\ListPayables::route('/'),
+            'index' => Pages\ListPayables::route('/'),
             'create' => Pages\CreatePayable::route('/create'),
-            'edit'   => Pages\EditPayable::route('/{record}/edit'),
+            'edit' => Pages\EditPayable::route('/{record}/edit'),
         ];
+    }
+
+    public static function getEloquentQuery(): Builder
+    {
+        $query = parent::getEloquentQuery();
+        $user = auth()->user();
+
+        if ($user === null) {
+            return $query->whereRaw('1 = 0');
+        }
+
+        if (! $user->canAccessAllBranches()) {
+            $query->whereHas('deliveryOrder', fn ($orders) => $orders->accessibleTo($user));
+        }
+
+        return $query;
     }
 
     public static function canAccess(): bool
     {
-        return auth()->user()?->canViewFinance() ?? false;
+        return auth()->user()?->hasPermission('payables.view') ?? false;
     }
 
     public static function shouldRegisterNavigation(): bool
     {
-        return auth()->user()?->isOwnerPusat() ?? false;
+        return auth()->user()?->hasPermission('payables.view') ?? false;
     }
 
     public static function canCreate(): bool
     {
-        return auth()->user()?->canViewFinance() ?? false;
+        return auth()->user()?->hasPermission('payables.create') ?? false;
     }
 }

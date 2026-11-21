@@ -16,7 +16,9 @@ class CylinderCirculationAccessTest extends TestCase
     use RefreshDatabase;
 
     private Branch $branch;
+
     private CylinderCirculation $circulation;
+
     private array $users = [];
 
     protected function setUp(): void

@@ -3,6 +3,8 @@
 namespace App\Filament\Resources\ExpeditionLoadingOrderResource\Pages;
 
 use App\Filament\Resources\ExpeditionLoadingOrderResource;
+use App\Models\Branch;
+use App\Models\DeliveryOrder;
 use App\Services\DocumentNumberService;
 use App\Support\OutstandingReconciliations;
 use Filament\Resources\Pages\CreateRecord;
@@ -15,12 +17,30 @@ class CreateExpeditionLoadingOrder extends CreateRecord
 
     protected function mutateFormDataBeforeCreate(array $data): array
     {
-        $data['document_type']     = 'lo';
-        $data['lo_kind']           = 'expedition';
+        $user = auth()->user();
+        $mainBranch = Branch::mainBranch()->first();
+        abort_unless(
+            $user->hasPermission('loading_orders.create')
+                && $mainBranch !== null
+                && $user->canAccessBranch((int) $mainBranch->id)
+                && $user->canAccessBranch((int) ($data['destination_branch_id'] ?? 0)),
+            403
+        );
+        abort_unless(
+            DeliveryOrder::transportirLoadingOrders()
+                ->accessibleTo($user)
+                ->where('do_number', $data['transportir_lo_number'] ?? null)
+                ->exists(),
+            403
+        );
+
+        $data['origin_branch_id'] = $mainBranch->id;
+        $data['document_type'] = 'lo';
+        $data['lo_kind'] = 'expedition';
         $data['counterparty_type'] = 'branch';
-        $data['cost_borne_by']     = 'sum';
-        $data['requested_by']      = auth()->id();
-        $data['counterparty_name'] ??= \App\Models\Branch::find($data['destination_branch_id'] ?? null)?->name;
+        $data['cost_borne_by'] = 'sum';
+        $data['requested_by'] = auth()->id();
+        $data['counterparty_name'] ??= Branch::find($data['destination_branch_id'] ?? null)?->name;
 
         // D6: the credit this LO settles must be referenced in the notes.
         $data['notes'] = OutstandingReconciliations::appendReference(

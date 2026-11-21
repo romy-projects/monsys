@@ -8,6 +8,7 @@ use App\Models\StockMutation;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
+use Filament\Support\Enums\FontWeight;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Collection;
@@ -36,18 +37,21 @@ class StockMutationResource extends Resource
     public static function form(Form $form): Form
     {
         $user = auth()->user();
+        $branchIds = $user?->accessibleBranchIds() ?? [];
+        $branchQuery = Branch::active()->orderBy('name');
+        $user?->applyAccessibleBranchScope($branchQuery, 'branches.id');
+        $branchOptions = $branchQuery->pluck('name', 'id');
+        $defaultBranchId = $user?->branch_id !== null && in_array((int) $user->branch_id, $branchIds, true)
+            ? $user->branch_id
+            : ($branchIds[0] ?? null);
 
         return $form->schema([
             Forms\Components\Section::make('Mutation Details')
                 ->schema([
                     Forms\Components\Select::make('branch_id')
                         ->label('Branch / Cabang')
-                        ->options(
-                            $user?->isOwnerPusat() || $user?->isRegionalLeader()
-                                ? Branch::active()->pluck('name', 'id')
-                                : Branch::where('id', $user?->branch_id)->pluck('name', 'id')
-                        )
-                        ->default($user?->branch_id)
+                        ->options($branchOptions)
+                        ->default($defaultBranchId)
                         ->required()
                         ->searchable()
                         ->columnSpan(1),
@@ -61,9 +65,9 @@ class StockMutationResource extends Resource
                     Forms\Components\Select::make('mutation_type')
                         ->label('Type / Jenis Mutasi')
                         ->options([
-                            'in'         => '⬇️ Stock In / Masuk',
-                            'out'        => '⬆️ Stock Out / Keluar',
-                            'transfer'   => '↔️ Transfer Antar Cabang',
+                            'in' => '⬇️ Stock In / Masuk',
+                            'out' => '⬆️ Stock Out / Keluar',
+                            'transfer' => '↔️ Transfer Antar Cabang',
                             'adjustment' => '🔧 Adjustment / Koreksi',
                         ])
                         ->required()
@@ -73,10 +77,10 @@ class StockMutationResource extends Resource
                     Forms\Components\Select::make('cylinder_type')
                         ->label('Cylinder Type / Jenis Tabung')
                         ->options([
-                            '3kg'   => '3 kg',
+                            '3kg' => '3 kg',
                             '5.5kg' => '5.5 kg',
-                            '12kg'  => '12 kg',
-                            '50kg'  => '50 kg',
+                            '12kg' => '12 kg',
+                            '50kg' => '50 kg',
                         ])
                         ->required()
                         ->columnSpan(1),
@@ -96,18 +100,18 @@ class StockMutationResource extends Resource
                 ])->columns(2),
 
             Forms\Components\Section::make('Transfer Details')
-                ->visible(fn(Forms\Get $get) => $get('mutation_type') === 'transfer')
+                ->visible(fn (Forms\Get $get) => $get('mutation_type') === 'transfer')
                 ->schema([
                     Forms\Components\Select::make('source_branch_id')
                         ->label('Source Branch / Cabang Asal')
-                        ->options(Branch::active()->pluck('name', 'id'))
+                        ->options(fn () => $branchOptions)
                         ->searchable()
                         ->nullable()
                         ->columnSpan(1),
 
                     Forms\Components\Select::make('destination_branch_id')
                         ->label('Destination Branch / Cabang Tujuan')
-                        ->options(Branch::active()->pluck('name', 'id'))
+                        ->options(fn () => $branchOptions)
                         ->searchable()
                         ->nullable()
                         ->columnSpan(1),
@@ -129,14 +133,7 @@ class StockMutationResource extends Resource
         $user = auth()->user();
 
         return $table
-            ->modifyQueryUsing(
-                fn($query) =>
-                $query->with(['branch', 'sourceBranch', 'destinationBranch', 'createdBy'])
-                    ->when(
-                        ! $user?->isOwnerPusat() && ! $user?->isRegionalLeader(),
-                        fn($q) => $q->where('branch_id', $user?->branch_id)
-                    )
-            )
+            ->modifyQueryUsing(fn ($query) => $query->with(['branch', 'sourceBranch', 'destinationBranch', 'createdBy']))
             ->columns([
                 Tables\Columns\TextColumn::make('mutation_date')
                     ->label('Date')
@@ -150,19 +147,19 @@ class StockMutationResource extends Resource
                 Tables\Columns\TextColumn::make('mutation_type')
                     ->label('Type')
                     ->badge()
-                    ->color(fn($state) => match ($state) {
-                        'in'         => 'success',
-                        'out'        => 'danger',
-                        'transfer'   => 'info',
+                    ->color(fn ($state) => match ($state) {
+                        'in' => 'success',
+                        'out' => 'danger',
+                        'transfer' => 'info',
                         'adjustment' => 'warning',
-                        default      => 'gray',
+                        default => 'gray',
                     })
-                    ->formatStateUsing(fn($state) => match ($state) {
-                        'in'         => 'Stock In',
-                        'out'        => 'Stock Out',
-                        'transfer'   => 'Transfer',
+                    ->formatStateUsing(fn ($state) => match ($state) {
+                        'in' => 'Stock In',
+                        'out' => 'Stock Out',
+                        'transfer' => 'Transfer',
                         'adjustment' => 'Adjustment',
-                        default      => $state,
+                        default => $state,
                     }),
 
                 Tables\Columns\TextColumn::make('cylinder_type')
@@ -172,8 +169,8 @@ class StockMutationResource extends Resource
 
                 Tables\Columns\TextColumn::make('quantity')
                     ->label('Quantity')
-                    ->formatStateUsing(fn($state) => number_format($state) . ' pcs')
-                    ->weight(\Filament\Support\Enums\FontWeight::SemiBold),
+                    ->formatStateUsing(fn ($state) => number_format($state).' pcs')
+                    ->weight(FontWeight::SemiBold),
 
                 Tables\Columns\TextColumn::make('reference_no')
                     ->label('Reference')
@@ -195,24 +192,30 @@ class StockMutationResource extends Resource
             ->filters([
                 Tables\Filters\SelectFilter::make('branch_id')
                     ->label('Branch')
-                    ->options(Branch::active()->pluck('name', 'id'))
-                    ->visible(fn() => $user?->isOwnerPusat() || $user?->isRegionalLeader()),
+                    ->options(function () use ($user) {
+                        $query = Branch::active()->orderBy('name');
+                        $user?->applyAccessibleBranchScope($query, 'branches.id');
+
+                        return $query->pluck('name', 'id');
+                    })
+                    ->visible(fn () => $user?->canAccessAllBranches() || count($user?->accessibleBranchIds() ?? []) > 1
+                    ),
 
                 Tables\Filters\SelectFilter::make('mutation_type')
                     ->label('Type')
                     ->options([
-                        'in'         => 'Stock In',
-                        'out'        => 'Stock Out',
-                        'transfer'   => 'Transfer',
+                        'in' => 'Stock In',
+                        'out' => 'Stock Out',
+                        'transfer' => 'Transfer',
                         'adjustment' => 'Adjustment',
                     ]),
 
                 Tables\Filters\SelectFilter::make('cylinder_type')
                     ->options([
-                        '3kg'   => '3 kg',
+                        '3kg' => '3 kg',
                         '5.5kg' => '5.5 kg',
-                        '12kg'  => '12 kg',
-                        '50kg'  => '50 kg',
+                        '12kg' => '12 kg',
+                        '50kg' => '50 kg',
                     ]),
 
                 Tables\Filters\Filter::make('mutation_date')
@@ -221,22 +224,29 @@ class StockMutationResource extends Resource
                         Forms\Components\DatePicker::make('until')->label('Until'),
                     ])
                     ->query(
-                        fn($query, array $data) => $query
-                            ->when($data['from'],  fn($q) => $q->whereDate('mutation_date', '>=', $data['from']))
-                            ->when($data['until'], fn($q) => $q->whereDate('mutation_date', '<=', $data['until']))
+                        fn ($query, array $data) => $query
+                            ->when($data['from'], fn ($q) => $q->whereDate('mutation_date', '>=', $data['from']))
+                            ->when($data['until'], fn ($q) => $q->whereDate('mutation_date', '<=', $data['until']))
                     ),
             ])
             ->actions([
                 Tables\Actions\EditAction::make()
-                    ->visible(fn (StockMutation $record) => static::canEdit($record)),
+                    ->visible(fn (StockMutation $record) => static::canEdit($record))
+                    ->authorize(fn (StockMutation $record) => static::canEdit($record)),
                 Tables\Actions\DeleteAction::make()
-                    ->visible(fn (StockMutation $record) => static::canDelete($record)),
+                    ->visible(fn (StockMutation $record) => static::canDelete($record))
+                    ->authorize(fn (StockMutation $record) => static::canDelete($record)),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make()
+                        // Filament evaluates this while the table renders, before
+                        // anything is selected and `getRecords()` is still null, so
+                        // it can only gate on the permission. The per-record guard
+                        // runs in `using()` below, which always has a selection.
+                        ->authorize(fn (): bool => static::can('deleteAny'))
                         ->using(fn (Collection $records) => $records
-                            ->whereNull('purchase_order_id')
+                            ->filter(fn (StockMutation $record): bool => static::canDelete($record))
                             ->each(fn (StockMutation $record) => $record->delete())),
                 ]),
             ])
@@ -251,19 +261,19 @@ class StockMutationResource extends Resource
     public static function getPages(): array
     {
         return [
-            'index'  => Pages\ListStockMutations::route('/'),
+            'index' => Pages\ListStockMutations::route('/'),
             'create' => Pages\CreateStockMutation::route('/create'),
-            'edit'   => Pages\EditStockMutation::route('/{record}/edit'),
+            'edit' => Pages\EditStockMutation::route('/{record}/edit'),
         ];
     }
 
     public static function canEdit(Model $record): bool
     {
-        return $record->purchase_order_id === null;
+        return $record->purchase_order_id === null && static::can('update', $record);
     }
 
     public static function canDelete(Model $record): bool
     {
-        return $record->purchase_order_id === null;
+        return $record->purchase_order_id === null && static::can('delete', $record);
     }
 }

@@ -20,11 +20,10 @@ class PayableController extends Controller
 
     public function index(Request $request): JsonResponse
     {
-        $user  = $request->user();
+        $user = $request->user();
         $query = Payable::query()->with('transportir');
 
-        // Branch-scoped: only owner_pusat and regional_leader see all; others see nothing (payables are pusat-level)
-        if (! $user->canViewFinance()) {
+        if (! $user->hasPermission('payables.view')) {
             return $this->forbidden();
         }
 
@@ -46,7 +45,7 @@ class PayableController extends Controller
 
     public function show(Payable $payable, Request $request): JsonResponse
     {
-        if (! $request->user()->canViewFinance()) {
+        if (! $request->user()->hasPermission('payables.view')) {
             return $this->forbidden();
         }
 
@@ -57,24 +56,24 @@ class PayableController extends Controller
 
     public function store(Request $request): JsonResponse
     {
-        if (! $request->user()->canViewFinance()) {
+        if (! $request->user()->hasPermission('payables.create')) {
             return $this->forbidden();
         }
 
         $data = $request->validate([
-            'transportir_id'    => ['required', 'exists:transportirs,id'],
+            'transportir_id' => ['required', 'exists:transportirs,id'],
             'delivery_order_id' => [
                 'nullable',
                 Rule::exists('delivery_orders', 'id')
                     ->where('document_type', 'lo')
                     ->where('transportir_id', (int) $request->input('transportir_id')),
             ],
-            'invoice_number'    => ['nullable', 'string', 'max:100'],
-            'description'       => ['required', 'string', 'max:255'],
-            'amount'            => ['required', 'numeric', 'min:0'],
-            'paid_amount'       => ['nullable', 'numeric', 'min:0'],
-            'due_date'          => ['nullable', 'date'],
-            'status'            => ['nullable', 'in:pending,paid'],
+            'invoice_number' => ['nullable', 'string', 'max:100'],
+            'description' => ['required', 'string', 'max:255'],
+            'amount' => ['required', 'numeric', 'min:0'],
+            'paid_amount' => ['nullable', 'numeric', 'min:0'],
+            'due_date' => ['nullable', 'date'],
+            'status' => ['nullable', 'in:pending,paid'],
         ]);
 
         $opening = (float) ($data['paid_amount'] ?? 0);
@@ -87,7 +86,7 @@ class PayableController extends Controller
                 app(PaymentLedger::class)->recordPayable($payable, [
                     'amount' => $opening,
                     'method' => 'other',
-                    'notes'  => 'Pembayaran awal saat pembuatan tagihan',
+                    'notes' => 'Pembayaran awal saat pembuatan tagihan',
                 ], $request->user()->id);
             } catch (ValidationException $e) {
                 $payable->delete();
@@ -103,7 +102,7 @@ class PayableController extends Controller
 
     public function update(Payable $payable, Request $request): JsonResponse
     {
-        if (! $request->user()->canViewFinance()) {
+        if (! $request->user()->hasPermission('payables.update')) {
             return $this->forbidden();
         }
 
@@ -114,19 +113,19 @@ class PayableController extends Controller
         $transportirId = (int) $request->input('transportir_id', $payable->transportir_id);
 
         $data = $request->validate([
-            'transportir_id'    => ['sometimes', 'exists:transportirs,id'],
+            'transportir_id' => ['sometimes', 'exists:transportirs,id'],
             'delivery_order_id' => [
                 'nullable',
                 Rule::exists('delivery_orders', 'id')
                     ->where('document_type', 'lo')
                     ->where('transportir_id', $transportirId),
             ],
-            'invoice_number'    => ['nullable', 'string', 'max:100'],
-            'description'       => ['sometimes', 'string', 'max:255'],
-            'amount'            => ['sometimes', 'numeric', 'min:0'],
-            'paid_amount'       => ['nullable', 'numeric', 'min:0'],
-            'due_date'          => ['nullable', 'date'],
-            'status'            => ['nullable', 'in:pending,paid'],
+            'invoice_number' => ['nullable', 'string', 'max:100'],
+            'description' => ['sometimes', 'string', 'max:255'],
+            'amount' => ['sometimes', 'numeric', 'min:0'],
+            'paid_amount' => ['nullable', 'numeric', 'min:0'],
+            'due_date' => ['nullable', 'date'],
+            'status' => ['nullable', 'in:pending,paid'],
         ]);
 
         // BALI-17: paid_amount is owned by the payment ledger; it may only be
@@ -153,7 +152,7 @@ class PayableController extends Controller
 
     public function destroy(Payable $payable, Request $request): JsonResponse
     {
-        if (! $request->user()->canViewFinance()) {
+        if (! $request->user()->hasPermission('payables.delete')) {
             return $this->forbidden();
         }
 
@@ -169,7 +168,7 @@ class PayableController extends Controller
      */
     public function pay(Payable $payable, Request $request): JsonResponse
     {
-        if (! $request->user()->canViewFinance()) {
+        if (! $request->user()->hasPermission('payables.record_payment')) {
             return $this->forbidden();
         }
 
@@ -205,7 +204,7 @@ class PayableController extends Controller
     /** BALI-17: payment history of one payable. */
     public function payments(Payable $payable, Request $request): JsonResponse
     {
-        if (! $request->user()->canViewFinance()) {
+        if (! $request->user()->hasPermission('payables.view')) {
             return $this->forbidden();
         }
 
@@ -217,7 +216,7 @@ class PayableController extends Controller
     /** BALI-17: record one payable payment instalment. */
     public function storePayment(Payable $payable, Request $request): JsonResponse
     {
-        if (! $request->user()->canViewFinance()) {
+        if (! $request->user()->hasPermission('payables.record_payment')) {
             return $this->forbidden();
         }
 
@@ -226,11 +225,11 @@ class PayableController extends Controller
         }
 
         $data = $request->validate([
-            'amount'       => ['required', 'numeric', 'min:0.01'],
-            'paid_on'      => ['nullable', 'date'],
-            'method'       => ['nullable', Rule::in(array_keys(PayablePayment::methods()))],
+            'amount' => ['required', 'numeric', 'min:0.01'],
+            'paid_on' => ['nullable', 'date'],
+            'method' => ['nullable', Rule::in(array_keys(PayablePayment::methods()))],
             'reference_no' => ['nullable', 'string', 'max:100'],
-            'notes'        => ['nullable', 'string', 'max:1000'],
+            'notes' => ['nullable', 'string', 'max:1000'],
         ]);
 
         try {
@@ -247,7 +246,7 @@ class PayableController extends Controller
     /** BALI-17: reverse one payment row. Owner pusat only. */
     public function destroyPayment(Payable $payable, PayablePayment $payment, Request $request): JsonResponse
     {
-        if (! $request->user()->isOwnerPusat()) {
+        if (! $request->user()->hasPermission('payables.reverse_payment')) {
             return $this->forbidden();
         }
 

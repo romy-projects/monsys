@@ -21,8 +21,11 @@ class TransportirRateTest extends TestCase
     use RefreshDatabase;
 
     private Branch $branch;
+
     private User $pusat;
+
     private Transportir $rajaSumber;
+
     private Transportir $mahardika;
 
     protected function setUp(): void
@@ -30,30 +33,30 @@ class TransportirRateTest extends TestCase
         parent::setUp();
 
         $this->branch = Branch::create([
-            'code'   => 'PST',
-            'name'   => 'SUM Pusat',
-            'city'   => 'Jakarta',
+            'code' => 'PST',
+            'name' => 'SUM Pusat',
+            'city' => 'Jakarta',
             'status' => 'active',
         ]);
 
         $this->pusat = User::create([
-            'name'      => 'Pusat User',
-            'email'     => 'pusat@test.com',
-            'password'  => bcrypt('password'),
-            'role'      => 'owner_pusat',
+            'name' => 'Pusat User',
+            'email' => 'pusat@test.com',
+            'password' => bcrypt('password'),
+            'role' => 'owner_pusat',
             'branch_id' => $this->branch->id,
-            'status'    => 'active',
+            'status' => 'active',
         ]);
 
         $this->rajaSumber = Transportir::create([
-            'name'   => 'PT Raja Sumber Cahaya',
-            'code'   => 'TRP-01',
+            'name' => 'PT Raja Sumber Cahaya',
+            'code' => 'TRP-01',
             'status' => 'active',
         ]);
 
         $this->mahardika = Transportir::create([
-            'name'   => 'PT Mahardika',
-            'code'   => 'TRP-02',
+            'name' => 'PT Mahardika',
+            'code' => 'TRP-02',
             'status' => 'active',
         ]);
     }
@@ -62,10 +65,10 @@ class TransportirRateTest extends TestCase
     {
         return TransportirRate::create([
             'transportir_id' => $transportir->id,
-            'cylinder_type'  => $type,
-            'rate'           => $amount,
+            'cylinder_type' => $type,
+            'rate' => $amount,
             'effective_date' => $effectiveDate,
-            'created_by'     => $this->pusat->id,
+            'created_by' => $this->pusat->id,
         ]);
     }
 
@@ -111,20 +114,20 @@ class TransportirRateTest extends TestCase
     public function breakdown_applies_rate_and_flat_delivery_fee(): void
     {
         LpgPrice::create([
-            'branch_id'      => $this->branch->id,
-            'cylinder_type'  => '12kg',
+            'branch_id' => $this->branch->id,
+            'cylinder_type' => '12kg',
             'purchase_price' => 20000,
-            'selling_price'  => 27000,
+            'selling_price' => 27000,
             'effective_date' => today()->toDateString(),
-            'created_by'     => $this->pusat->id,
+            'created_by' => $this->pusat->id,
         ]);
         $this->rate($this->rajaSumber, '12kg', 5000, today()->toDateString());
 
         $result = BranchPricing::breakdown([
-            'branch_id'       => $this->branch->id,
-            'cylinder_type'   => '12kg',
-            'quantity'        => 100,
-            'transportir_id'  => $this->rajaSumber->id,
+            'branch_id' => $this->branch->id,
+            'cylinder_type' => '12kg',
+            'quantity' => 100,
+            'transportir_id' => $this->rajaSumber->id,
             'expedition_cost' => 15000,
         ]);
 
@@ -147,21 +150,21 @@ class TransportirRateTest extends TestCase
     {
         // The note's simulation: 2.216.000 − 15.000 − 5.000 = 2.196.000.
         LpgPrice::create([
-            'branch_id'      => $this->branch->id,
-            'cylinder_type'  => '50kg',
+            'branch_id' => $this->branch->id,
+            'cylinder_type' => '50kg',
             'purchase_price' => 0,
-            'selling_price'  => 2216000,
+            'selling_price' => 2216000,
             'effective_date' => today()->toDateString(),
-            'created_by'     => $this->pusat->id,
+            'created_by' => $this->pusat->id,
         ]);
         $this->rate($this->rajaSumber, '50kg', 15000, today()->toDateString());
 
         $result = BranchPricing::breakdown([
-            'branch_id'           => $this->branch->id,
-            'cylinder_type'       => '50kg',
-            'quantity'            => 1,
-            'transportir_id'      => $this->rajaSumber->id,
-            'expedition_cost'     => 5000,
+            'branch_id' => $this->branch->id,
+            'cylinder_type' => '50kg',
+            'quantity' => 1,
+            'transportir_id' => $this->rajaSumber->id,
+            'expedition_cost' => 5000,
             'charge_fee_to_buyer' => false,
         ]);
 
@@ -176,9 +179,9 @@ class TransportirRateTest extends TestCase
     public function breakdown_never_fails_when_no_rate_or_price_is_configured(): void
     {
         $result = BranchPricing::breakdown([
-            'branch_id'     => $this->branch->id,
+            'branch_id' => $this->branch->id,
             'cylinder_type' => '3kg',
-            'quantity'      => 10,
+            'quantity' => 10,
         ]);
 
         $this->assertFalse($result['price_found']);

@@ -9,7 +9,8 @@ use Illuminate\Console\Command;
 
 class NotifyOverdueDeliveries extends Command
 {
-    protected $signature   = 'do:notify-overdue';
+    protected $signature = 'do:notify-overdue';
+
     protected $description = 'Send in-app notifications for delivery orders past their ETA';
 
     public function handle(): int
@@ -31,11 +32,17 @@ class NotifyOverdueDeliveries extends Command
             $daysLate = today()->diffInDays($do->eta);
 
             $recipients = User::where(function ($q) use ($do) {
-                $q->whereIn('role', ['owner_pusat', 'regional_leader'])
-                  ->orWhere(function ($q2) use ($do) {
-                      $q2->where('branch_id', $do->destination_branch_id)
-                         ->whereIn('role', ['owner_cabang', 'staff_gudang']);
-                  });
+                $q->whereHas('accessRole.permissions', fn ($query) => $query->whereIn(
+                    'permissions.key',
+                    ['system.business_admin', 'system.regional_access']
+                ))
+                    ->orWhere(function ($q2) use ($do) {
+                        $q2->where('branch_id', $do->destination_branch_id)
+                            ->whereHas('accessRole.permissions', fn ($query) => $query->whereIn(
+                                'permissions.key',
+                                ['system.branch_owner', 'system.warehouse_staff']
+                            ));
+                    });
             })->where('status', 'active')->get();
 
             if ($recipients->isEmpty()) {
@@ -47,8 +54,8 @@ class NotifyOverdueDeliveries extends Command
             Notification::make()
                 ->title('🚨 Delivery Overdue')
                 ->body(
-                    "DO #{$do->do_number} to {$dest} is {$daysLate} day(s) past ETA. " .
-                    "Status: " . ucfirst(str_replace('_', ' ', $do->status)) . "."
+                    "DO #{$do->do_number} to {$dest} is {$daysLate} day(s) past ETA. ".
+                    'Status: '.ucfirst(str_replace('_', ' ', $do->status)).'.'
                 )
                 ->danger()
                 ->sendToDatabase($recipients);

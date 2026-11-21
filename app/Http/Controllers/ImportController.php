@@ -6,6 +6,7 @@ use App\Models\Branch;
 use App\Models\Customer;
 use App\Models\Expedition;
 use App\Models\LpgPrice;
+use App\Models\Role;
 use App\Models\SalesTarget;
 use App\Models\User;
 use App\Models\Vehicle;
@@ -19,27 +20,26 @@ use Illuminate\Support\Facades\Hash;
 class ImportController extends Controller
 {
     private array $tables = [
-        'branches'      => ['code', 'name', 'city', 'status'],
-        'users'         => ['name', 'email', 'password', 'role', 'branch_code', 'phone', 'status'],
-        'customers'     => ['branch_code', 'name', 'type', 'phone', 'credit_limit'],
-        'vehicles'      => ['branch_code', 'plate_number', 'driver_name', 'capacity_kg', 'status'],
-        'expeditions'   => ['name', 'code', 'phone', 'address', 'status'],
-        'lpg_prices'    => ['branch_code', 'cylinder_type', 'purchase_price', 'selling_price', 'effective_date'],
+        'branches' => ['code', 'name', 'city', 'status'],
+        'users' => ['name', 'email', 'password', 'role', 'branch_code', 'phone', 'status'],
+        'customers' => ['branch_code', 'name', 'type', 'phone', 'credit_limit'],
+        'vehicles' => ['branch_code', 'plate_number', 'driver_name', 'capacity_kg', 'status'],
+        'expeditions' => ['name', 'code', 'phone', 'address', 'status'],
+        'lpg_prices' => ['branch_code', 'cylinder_type', 'purchase_price', 'selling_price', 'effective_date'],
         'sales_targets' => ['branch_code', 'year', 'month', 'cylinder_type', 'target_qty', 'target_revenue'],
     ];
 
     private array $enums = [
-        'role'            => ['owner_pusat', 'regional_leader', 'owner_cabang', 'staff_gudang'],
-        'status'          => ['active', 'inactive'],
-        'type'            => ['retail', 'wholesale', 'agent'],
-        'cylinder_type'   => ['3kg', '5.5kg', '12kg', '50kg'],
+        'status' => ['active', 'inactive'],
+        'type' => ['retail', 'wholesale', 'agent'],
+        'cylinder_type' => ['3kg', '5.5kg', '12kg', '50kg'],
     ];
 
     // ── Download Template ─────────────────────────────────────
 
     public function downloadTemplate(string $table, Request $request)
     {
-        if (! $request->user()->isOwnerPusat() && ! $request->user()->isRegionalLeader()) {
+        if (! $request->user()->hasPermission('imports.view_templates')) {
             abort(403);
         }
 
@@ -49,11 +49,11 @@ class ImportController extends Controller
 
         $columns = $this->tables[$table];
 
-        $xlsx = new XlsxWriter();
+        $xlsx = new XlsxWriter;
         $xlsx->addRow($columns);
         $xlsx->addRow(array_map(fn () => '', $columns)); // empty data row as example
 
-        return $xlsx->download('template-' . $table . '-' . now()->format('Y-m-d') . '.xlsx');
+        return $xlsx->download('template-'.$table.'-'.now()->format('Y-m-d').'.xlsx');
     }
 
     // ── Import Data ───────────────────────────────────────────
@@ -62,19 +62,31 @@ class ImportController extends Controller
     {
         $user = $request->user();
 
-        if (! $user->isOwnerPusat() && ! $user->isRegionalLeader()) {
-            return response()->json(['message' => 'Forbidden.'], 403);
-        }
-
         if (! isset($this->tables[$table])) {
             return response()->json(['message' => 'Table not found.'], 404);
+        }
+
+        $createPermissions = [
+            'branches' => 'branches.create',
+            'users' => 'users.create',
+            'customers' => 'customers.create',
+            'vehicles' => 'vehicles.create',
+            'expeditions' => 'expeditions.create',
+            'lpg_prices' => 'prices.create',
+            'sales_targets' => 'sales_targets.create',
+        ];
+
+        if (! $user->hasPermission('imports.run')
+            || ! $user->hasPermission($createPermissions[$table])
+            || ($table === 'users' && ! $user->hasPermission('access_control.manage'))) {
+            return response()->json(['message' => 'Forbidden.'], 403);
         }
 
         $request->validate([
             'file' => ['required', 'file', 'mimes:xlsx', 'max:2048'],
         ]);
 
-        $path  = $request->file('file')->getRealPath();
+        $path = $request->file('file')->getRealPath();
         $columns = $this->tables[$table];
 
         try {
@@ -84,7 +96,7 @@ class ImportController extends Controller
         }
 
         $header = $reader->header();
-        $data   = $reader->data();
+        $data = $reader->data();
 
         if (empty($data)) {
             return response()->json(['message' => 'File is empty (no data rows).'], 422);
@@ -97,19 +109,19 @@ class ImportController extends Controller
 
         if ($normalizedHeader !== $normalizedExpected) {
             return response()->json([
-                'message' => 'Column mismatch. Expected: ' . implode(', ', $expectedHeader)
-                    . '. Got: ' . implode(', ', $header),
+                'message' => 'Column mismatch. Expected: '.implode(', ', $expectedHeader)
+                    .'. Got: '.implode(', ', $header),
             ], 422);
         }
 
-        $errors   = [];
+        $errors = [];
         $imported = 0;
 
         DB::beginTransaction();
 
         try {
             foreach ($data as $rowIdx => $row) {
-                $rowNum  = $rowIdx + 2; // 1-indexed + header row
+                $rowNum = $rowIdx + 2; // 1-indexed + header row
                 $rowData = array_combine($columns, array_slice($row, 0, count($columns)));
 
                 // Skip completely empty rows
@@ -117,9 +129,10 @@ class ImportController extends Controller
                     continue;
                 }
 
-                $rowErrors = $this->validateRow($table, $rowData, $rowNum);
+                $rowErrors = $this->validateRow($table, $rowData, $rowNum, $user);
                 if (! empty($rowErrors)) {
                     $errors = array_merge($errors, $rowErrors);
+
                     continue;
                 }
 
@@ -133,43 +146,64 @@ class ImportController extends Controller
 
             if (! empty($errors)) {
                 DB::rollBack();
+
                 return response()->json([
-                    'message'  => 'Validation failed. No rows were imported.',
+                    'message' => 'Validation failed. No rows were imported.',
                     'imported' => 0,
-                    'errors'   => $errors,
+                    'errors' => $errors,
                 ], 422);
             }
 
             DB::commit();
 
             return response()->json([
-                'message'  => "Successfully imported {$imported} row(s).",
+                'message' => "Successfully imported {$imported} row(s).",
                 'imported' => $imported,
-                'errors'   => [],
+                'errors' => [],
             ]);
 
         } catch (\Throwable $e) {
             DB::rollBack();
+
             return response()->json([
-                'message'  => 'Import failed: ' . $e->getMessage(),
+                'message' => 'Import failed: '.$e->getMessage(),
                 'imported' => 0,
-                'errors'   => [['row' => null, 'message' => $e->getMessage()]],
+                'errors' => [['row' => null, 'message' => $e->getMessage()]],
             ], 500);
         }
     }
 
     // ── Row Validation ────────────────────────────────────────
 
-    private function validateRow(string $table, array $row, int $rowNum): array
+    private function validateRow(string $table, array $row, int $rowNum, User $user): array
     {
         $errors = [];
+        $branchBoundTables = ['users', 'customers', 'vehicles', 'lpg_prices', 'sales_targets'];
+
+        if (in_array($table, $branchBoundTables, true) && ! $user->canAccessAllBranches()) {
+            $branchId = ! empty($row['branch_code'])
+                ? Branch::where('code', $row['branch_code'])->value('id')
+                : null;
+
+            if ($branchId === null || ! $user->canAccessBranch((int) $branchId)) {
+                $errors[] = [
+                    'row' => $rowNum,
+                    'field' => 'branch_code',
+                    'message' => 'The target branch is outside your assigned data scope.',
+                ];
+            }
+        }
 
         switch ($table) {
             case 'branches':
-                if (empty($row['code'])) $errors[] = ['row' => $rowNum, 'field' => 'code', 'message' => 'Branch code is required.'];
-                if (empty($row['name'])) $errors[] = ['row' => $rowNum, 'field' => 'name', 'message' => 'Branch name is required.'];
+                if (empty($row['code'])) {
+                    $errors[] = ['row' => $rowNum, 'field' => 'code', 'message' => 'Branch code is required.'];
+                }
+                if (empty($row['name'])) {
+                    $errors[] = ['row' => $rowNum, 'field' => 'name', 'message' => 'Branch name is required.'];
+                }
                 if (! empty($row['status']) && ! in_array($row['status'], $this->enums['status'])) {
-                    $errors[] = ['row' => $rowNum, 'field' => 'status', 'message' => 'Status must be: ' . implode(', ', $this->enums['status'])];
+                    $errors[] = ['row' => $rowNum, 'field' => 'status', 'message' => 'Status must be: '.implode(', ', $this->enums['status'])];
                 }
                 if (! empty($row['code']) && Branch::where('code', $row['code'])->exists()) {
                     $errors[] = ['row' => $rowNum, 'field' => 'code', 'message' => "Branch code '{$row['code']}' already exists."];
@@ -177,12 +211,23 @@ class ImportController extends Controller
                 break;
 
             case 'users':
-                if (empty($row['name'])) $errors[] = ['row' => $rowNum, 'field' => 'name', 'message' => 'Name is required.'];
-                if (empty($row['email'])) $errors[] = ['row' => $rowNum, 'field' => 'email', 'message' => 'Email is required.'];
-                if (empty($row['password'])) $errors[] = ['row' => $rowNum, 'field' => 'password', 'message' => 'Password is required.'];
-                if (empty($row['role'])) $errors[] = ['row' => $rowNum, 'field' => 'role', 'message' => 'Role is required.'];
-                if (! empty($row['role']) && ! in_array($row['role'], $this->enums['role'])) {
-                    $errors[] = ['row' => $rowNum, 'field' => 'role', 'message' => 'Role must be: ' . implode(', ', $this->enums['role'])];
+                if (empty($row['name'])) {
+                    $errors[] = ['row' => $rowNum, 'field' => 'name', 'message' => 'Name is required.'];
+                }
+                if (empty($row['email'])) {
+                    $errors[] = ['row' => $rowNum, 'field' => 'email', 'message' => 'Email is required.'];
+                }
+                if (empty($row['password'])) {
+                    $errors[] = ['row' => $rowNum, 'field' => 'password', 'message' => 'Password is required.'];
+                }
+                if (empty($row['role'])) {
+                    $errors[] = ['row' => $rowNum, 'field' => 'role', 'message' => 'Role is required.'];
+                }
+                if (! empty($row['role']) && ! Role::where('name', $row['role'])
+                    ->where('is_active', true)
+                    ->where('is_super_admin', false)
+                    ->exists()) {
+                    $errors[] = ['row' => $rowNum, 'field' => 'role', 'message' => 'Role must match an active non-Super-Admin role.'];
                 }
                 if (! empty($row['email']) && User::where('email', $row['email'])->exists()) {
                     $errors[] = ['row' => $rowNum, 'field' => 'email', 'message' => "Email '{$row['email']}' already exists."];
@@ -191,14 +236,16 @@ class ImportController extends Controller
                     $errors[] = ['row' => $rowNum, 'field' => 'branch_code', 'message' => "Branch code '{$row['branch_code']}' not found."];
                 }
                 if (! empty($row['status']) && ! in_array($row['status'], $this->enums['status'])) {
-                    $errors[] = ['row' => $rowNum, 'field' => 'status', 'message' => 'Status must be: ' . implode(', ', $this->enums['status'])];
+                    $errors[] = ['row' => $rowNum, 'field' => 'status', 'message' => 'Status must be: '.implode(', ', $this->enums['status'])];
                 }
                 break;
 
             case 'customers':
-                if (empty($row['name'])) $errors[] = ['row' => $rowNum, 'field' => 'name', 'message' => 'Customer name is required.'];
+                if (empty($row['name'])) {
+                    $errors[] = ['row' => $rowNum, 'field' => 'name', 'message' => 'Customer name is required.'];
+                }
                 if (! empty($row['type']) && ! in_array($row['type'], $this->enums['type'])) {
-                    $errors[] = ['row' => $rowNum, 'field' => 'type', 'message' => 'Type must be: ' . implode(', ', $this->enums['type'])];
+                    $errors[] = ['row' => $rowNum, 'field' => 'type', 'message' => 'Type must be: '.implode(', ', $this->enums['type'])];
                 }
                 if (! empty($row['branch_code']) && ! Branch::where('code', $row['branch_code'])->exists()) {
                     $errors[] = ['row' => $rowNum, 'field' => 'branch_code', 'message' => "Branch code '{$row['branch_code']}' not found."];
@@ -206,42 +253,62 @@ class ImportController extends Controller
                 break;
 
             case 'vehicles':
-                if (empty($row['plate_number'])) $errors[] = ['row' => $rowNum, 'field' => 'plate_number', 'message' => 'Plate number is required.'];
+                if (empty($row['plate_number'])) {
+                    $errors[] = ['row' => $rowNum, 'field' => 'plate_number', 'message' => 'Plate number is required.'];
+                }
                 if (! empty($row['branch_code']) && ! Branch::where('code', $row['branch_code'])->exists()) {
                     $errors[] = ['row' => $rowNum, 'field' => 'branch_code', 'message' => "Branch code '{$row['branch_code']}' not found."];
                 }
                 if (! empty($row['status']) && ! in_array($row['status'], $this->enums['status'])) {
-                    $errors[] = ['row' => $rowNum, 'field' => 'status', 'message' => 'Status must be: ' . implode(', ', $this->enums['status'])];
+                    $errors[] = ['row' => $rowNum, 'field' => 'status', 'message' => 'Status must be: '.implode(', ', $this->enums['status'])];
                 }
                 break;
 
             case 'expeditions':
-                if (empty($row['name'])) $errors[] = ['row' => $rowNum, 'field' => 'name', 'message' => 'Expedition name is required.'];
+                if (empty($row['name'])) {
+                    $errors[] = ['row' => $rowNum, 'field' => 'name', 'message' => 'Expedition name is required.'];
+                }
                 if (! empty($row['status']) && ! in_array($row['status'], $this->enums['status'])) {
-                    $errors[] = ['row' => $rowNum, 'field' => 'status', 'message' => 'Status must be: ' . implode(', ', $this->enums['status'])];
+                    $errors[] = ['row' => $rowNum, 'field' => 'status', 'message' => 'Status must be: '.implode(', ', $this->enums['status'])];
                 }
                 break;
 
             case 'lpg_prices':
-                if (empty($row['cylinder_type'])) $errors[] = ['row' => $rowNum, 'field' => 'cylinder_type', 'message' => 'Cylinder type is required.'];
-                if (! empty($row['cylinder_type']) && ! in_array($row['cylinder_type'], $this->enums['cylinder_type'])) {
-                    $errors[] = ['row' => $rowNum, 'field' => 'cylinder_type', 'message' => 'Cylinder type must be: ' . implode(', ', $this->enums['cylinder_type'])];
+                if (empty($row['cylinder_type'])) {
+                    $errors[] = ['row' => $rowNum, 'field' => 'cylinder_type', 'message' => 'Cylinder type is required.'];
                 }
-                if (empty($row['purchase_price']) && $row['purchase_price'] !== 0) $errors[] = ['row' => $rowNum, 'field' => 'purchase_price', 'message' => 'Purchase price is required.'];
-                if (empty($row['selling_price']) && $row['selling_price'] !== 0) $errors[] = ['row' => $rowNum, 'field' => 'selling_price', 'message' => 'Selling price is required.'];
-                if (empty($row['effective_date'])) $errors[] = ['row' => $rowNum, 'field' => 'effective_date', 'message' => 'Effective date is required.'];
+                if (! empty($row['cylinder_type']) && ! in_array($row['cylinder_type'], $this->enums['cylinder_type'])) {
+                    $errors[] = ['row' => $rowNum, 'field' => 'cylinder_type', 'message' => 'Cylinder type must be: '.implode(', ', $this->enums['cylinder_type'])];
+                }
+                if (empty($row['purchase_price']) && $row['purchase_price'] !== 0) {
+                    $errors[] = ['row' => $rowNum, 'field' => 'purchase_price', 'message' => 'Purchase price is required.'];
+                }
+                if (empty($row['selling_price']) && $row['selling_price'] !== 0) {
+                    $errors[] = ['row' => $rowNum, 'field' => 'selling_price', 'message' => 'Selling price is required.'];
+                }
+                if (empty($row['effective_date'])) {
+                    $errors[] = ['row' => $rowNum, 'field' => 'effective_date', 'message' => 'Effective date is required.'];
+                }
                 if (! empty($row['branch_code']) && ! Branch::where('code', $row['branch_code'])->exists()) {
                     $errors[] = ['row' => $rowNum, 'field' => 'branch_code', 'message' => "Branch code '{$row['branch_code']}' not found."];
                 }
                 break;
 
             case 'sales_targets':
-                if (empty($row['branch_code'])) $errors[] = ['row' => $rowNum, 'field' => 'branch_code', 'message' => 'Branch code is required.'];
-                if (empty($row['year'])) $errors[] = ['row' => $rowNum, 'field' => 'year', 'message' => 'Year is required.'];
-                if (empty($row['month'])) $errors[] = ['row' => $rowNum, 'field' => 'month', 'message' => 'Month is required.'];
-                if (empty($row['cylinder_type'])) $errors[] = ['row' => $rowNum, 'field' => 'cylinder_type', 'message' => 'Cylinder type is required.'];
+                if (empty($row['branch_code'])) {
+                    $errors[] = ['row' => $rowNum, 'field' => 'branch_code', 'message' => 'Branch code is required.'];
+                }
+                if (empty($row['year'])) {
+                    $errors[] = ['row' => $rowNum, 'field' => 'year', 'message' => 'Year is required.'];
+                }
+                if (empty($row['month'])) {
+                    $errors[] = ['row' => $rowNum, 'field' => 'month', 'message' => 'Month is required.'];
+                }
+                if (empty($row['cylinder_type'])) {
+                    $errors[] = ['row' => $rowNum, 'field' => 'cylinder_type', 'message' => 'Cylinder type is required.'];
+                }
                 if (! empty($row['cylinder_type']) && ! in_array($row['cylinder_type'], $this->enums['cylinder_type'])) {
-                    $errors[] = ['row' => $rowNum, 'field' => 'cylinder_type', 'message' => 'Cylinder type must be: ' . implode(', ', $this->enums['cylinder_type'])];
+                    $errors[] = ['row' => $rowNum, 'field' => 'cylinder_type', 'message' => 'Cylinder type must be: '.implode(', ', $this->enums['cylinder_type'])];
                 }
                 if (! empty($row['branch_code']) && ! Branch::where('code', $row['branch_code'])->exists()) {
                     $errors[] = ['row' => $rowNum, 'field' => 'branch_code', 'message' => "Branch code '{$row['branch_code']}' not found."];
@@ -263,9 +330,9 @@ class ImportController extends Controller
         switch ($table) {
             case 'branches':
                 Branch::create([
-                    'code'   => $data['code'],
-                    'name'   => $data['name'],
-                    'city'   => $data['city'] ?? null,
+                    'code' => $data['code'],
+                    'name' => $data['name'],
+                    'city' => $data['city'] ?? null,
                     'status' => $data['status'] ?? 'active',
                 ]);
                 break;
@@ -276,13 +343,13 @@ class ImportController extends Controller
                     $branchId = Branch::where('code', $data['branch_code'])->value('id');
                 }
                 User::create([
-                    'name'      => $data['name'],
-                    'email'     => $data['email'],
-                    'password'  => Hash::make($data['password']),
-                    'role'      => $data['role'],
+                    'name' => $data['name'],
+                    'email' => $data['email'],
+                    'password' => Hash::make($data['password']),
+                    'role' => $data['role'],
                     'branch_id' => $branchId,
-                    'phone'     => $data['phone'] ?? null,
-                    'status'    => $data['status'] ?? 'active',
+                    'phone' => $data['phone'] ?? null,
+                    'status' => $data['status'] ?? 'active',
                 ]);
                 break;
 
@@ -292,10 +359,10 @@ class ImportController extends Controller
                     $branchId = Branch::where('code', $data['branch_code'])->value('id');
                 }
                 Customer::create([
-                    'branch_id'    => $branchId,
-                    'name'         => $data['name'],
-                    'type'         => $data['type'] ?? 'retail',
-                    'phone'        => $data['phone'] ?? null,
+                    'branch_id' => $branchId,
+                    'name' => $data['name'],
+                    'type' => $data['type'] ?? 'retail',
+                    'phone' => $data['phone'] ?? null,
                     'credit_limit' => $data['credit_limit'] ?? 0,
                 ]);
                 break;
@@ -306,21 +373,21 @@ class ImportController extends Controller
                     $branchId = Branch::where('code', $data['branch_code'])->value('id');
                 }
                 Vehicle::create([
-                    'branch_id'    => $branchId,
+                    'branch_id' => $branchId,
                     'plate_number' => $data['plate_number'],
-                    'driver_name'  => $data['driver_name'] ?? null,
-                    'capacity_kg'  => $data['capacity_kg'] ?? null,
-                    'status'       => $data['status'] ?? 'active',
+                    'driver_name' => $data['driver_name'] ?? null,
+                    'capacity_kg' => $data['capacity_kg'] ?? null,
+                    'status' => $data['status'] ?? 'active',
                 ]);
                 break;
 
             case 'expeditions':
                 Expedition::create([
-                    'name'    => $data['name'],
-                    'code'    => $data['code'] ?? null,
-                    'phone'   => $data['phone'] ?? null,
+                    'name' => $data['name'],
+                    'code' => $data['code'] ?? null,
+                    'phone' => $data['phone'] ?? null,
                     'address' => $data['address'] ?? null,
-                    'status'  => $data['status'] ?? 'active',
+                    'status' => $data['status'] ?? 'active',
                 ]);
                 break;
 
@@ -330,12 +397,12 @@ class ImportController extends Controller
                     : null;
 
                 LpgPrice::create([
-                    'branch_id'       => $branchId,
-                    'cylinder_type'   => $data['cylinder_type'],
-                    'purchase_price'  => (float) ($data['purchase_price'] ?? 0),
-                    'selling_price'   => (float) ($data['selling_price'] ?? 0),
-                    'effective_date'  => $data['effective_date'],
-                    'created_by'      => auth()->id(),
+                    'branch_id' => $branchId,
+                    'cylinder_type' => $data['cylinder_type'],
+                    'purchase_price' => (float) ($data['purchase_price'] ?? 0),
+                    'selling_price' => (float) ($data['selling_price'] ?? 0),
+                    'effective_date' => $data['effective_date'],
+                    'created_by' => auth()->id(),
                 ]);
                 break;
 
@@ -345,12 +412,12 @@ class ImportController extends Controller
                     $branchId = Branch::where('code', $data['branch_code'])->value('id');
                 }
                 SalesTarget::create([
-                    'branch_id'     => $branchId,
-                    'year'          => (int) ($data['year'] ?? now()->year),
-                    'month'         => (int) ($data['month'] ?? now()->month),
+                    'branch_id' => $branchId,
+                    'year' => (int) ($data['year'] ?? now()->year),
+                    'month' => (int) ($data['month'] ?? now()->month),
                     'cylinder_type' => $data['cylinder_type'],
-                    'target_qty'    => (int) ($data['target_qty'] ?? 0),
-                    'target_revenue'=> (float) ($data['target_revenue'] ?? 0),
+                    'target_qty' => (int) ($data['target_qty'] ?? 0),
+                    'target_revenue' => (float) ($data['target_revenue'] ?? 0),
                 ]);
                 break;
         }

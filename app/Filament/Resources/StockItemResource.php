@@ -8,6 +8,7 @@ use App\Models\StockItem;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
+use Filament\Support\Enums\FontWeight;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Model;
@@ -35,7 +36,14 @@ class StockItemResource extends Resource
     public static function form(Form $form): Form
     {
         $user = auth()->user();
-        $isBranchUser = $user && ! $user->isOwnerPusat() && ! $user->isRegionalLeader();
+        $branchIds = $user?->accessibleBranchIds() ?? [];
+        $branchQuery = Branch::active();
+        $user?->applyAccessibleBranchScope($branchQuery, 'branches.id');
+        $branchOptions = $branchQuery->pluck('name', 'id');
+        $defaultBranchId = $user?->branch_id !== null && in_array((int) $user->branch_id, $branchIds, true)
+            ? $user->branch_id
+            : ($branchIds[0] ?? null);
+        $singleBranch = count($branchIds) === 1;
 
         return $form->schema([
             Forms\Components\Section::make('Stock Snapshot')
@@ -43,25 +51,21 @@ class StockItemResource extends Resource
                 ->schema([
                     Forms\Components\Select::make('branch_id')
                         ->label('Branch / Cabang')
-                        ->options(
-                            ! $isBranchUser
-                                ? Branch::active()->pluck('name', 'id')
-                                : Branch::where('id', $user?->branch_id)->pluck('name', 'id')
-                        )
-                        ->default($user?->branch_id)
+                        ->options($branchOptions)
+                        ->default($defaultBranchId)
                         ->required()
                         ->searchable()
-                        ->disabled($isBranchUser)
+                        ->disabled($singleBranch)
                         ->dehydrated()
                         ->columnSpan(1),
 
                     Forms\Components\Select::make('cylinder_type')
                         ->label('Cylinder Type / Jenis Tabung')
                         ->options([
-                            '3kg'   => '3 kg',
+                            '3kg' => '3 kg',
                             '5.5kg' => '5.5 kg',
-                            '12kg'  => '12 kg',
-                            '50kg'  => '50 kg',
+                            '12kg' => '12 kg',
+                            '50kg' => '50 kg',
                         ])
                         ->required()
                         ->columnSpan(1),
@@ -107,19 +111,13 @@ class StockItemResource extends Resource
         $user = auth()->user();
 
         return $table
-            ->modifyQueryUsing(fn ($query) =>
-                $query->with('branch')
-                    ->when(
-                        ! $user?->isOwnerPusat() && ! $user?->isRegionalLeader(),
-                        fn ($q) => $q->where('branch_id', $user?->branch_id)
-                    )
-            )
+            ->modifyQueryUsing(fn ($query) => $query->with('branch'))
             ->columns([
                 Tables\Columns\TextColumn::make('branch.name')
                     ->label('Branch')
                     ->searchable()
                     ->sortable()
-                    ->weight(\Filament\Support\Enums\FontWeight::SemiBold),
+                    ->weight(FontWeight::SemiBold),
 
                 Tables\Columns\TextColumn::make('cylinder_type')
                     ->label('Type')
@@ -128,24 +126,24 @@ class StockItemResource extends Resource
 
                 Tables\Columns\TextColumn::make('qty_full')
                     ->label('Full (Isi)')
-                    ->formatStateUsing(fn ($state) => number_format($state) . ' pcs')
+                    ->formatStateUsing(fn ($state) => number_format($state).' pcs')
                     ->badge()
                     ->color(fn ($state) => match (true) {
-                        $state < 20  => 'danger',
-                        $state < 50  => 'warning',
-                        default      => 'success',
+                        $state < 20 => 'danger',
+                        $state < 50 => 'warning',
+                        default => 'success',
                     })
                     ->sortable(),
 
                 Tables\Columns\TextColumn::make('qty_empty')
                     ->label('Empty (Kosong)')
-                    ->formatStateUsing(fn ($state) => number_format($state) . ' pcs')
+                    ->formatStateUsing(fn ($state) => number_format($state).' pcs')
                     ->badge()
                     ->color('warning'),
 
                 Tables\Columns\TextColumn::make('qty_damaged')
                     ->label('Damaged (Rusak)')
-                    ->formatStateUsing(fn ($state) => number_format($state) . ' pcs')
+                    ->formatStateUsing(fn ($state) => number_format($state).' pcs')
                     ->badge()
                     ->color(fn ($state) => $state > 0 ? 'danger' : 'gray'),
 
@@ -157,15 +155,20 @@ class StockItemResource extends Resource
             ->filters([
                 Tables\Filters\SelectFilter::make('branch_id')
                     ->label('Branch')
-                    ->options(Branch::active()->pluck('name', 'id'))
-                    ->visible(fn () => $user?->isOwnerPusat() || $user?->isRegionalLeader()),
+                    ->options(function () use ($user) {
+                        $query = Branch::active();
+                        $user?->applyAccessibleBranchScope($query, 'branches.id');
+
+                        return $query->pluck('name', 'id');
+                    })
+                    ->visible(fn () => $user?->canAccessAllBranches() || count($user?->accessibleBranchIds() ?? []) > 1),
 
                 Tables\Filters\SelectFilter::make('cylinder_type')
                     ->options([
-                        '3kg'   => '3 kg',
+                        '3kg' => '3 kg',
                         '5.5kg' => '5.5 kg',
-                        '12kg'  => '12 kg',
-                        '50kg'  => '50 kg',
+                        '12kg' => '12 kg',
+                        '50kg' => '50 kg',
                     ]),
             ])
             ->actions([
@@ -177,7 +180,7 @@ class StockItemResource extends Resource
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make()
-                        ->visible(fn () => static::canCreate()),
+                        ->visible(fn () => static::can('deleteAny')),
                 ]),
             ])
             ->defaultSort('recorded_at', 'desc');
@@ -191,34 +194,24 @@ class StockItemResource extends Resource
     public static function getPages(): array
     {
         return [
-            'index'  => Pages\ListStockItems::route('/'),
+            'index' => Pages\ListStockItems::route('/'),
             'create' => Pages\CreateStockItem::route('/create'),
-            'edit'   => Pages\EditStockItem::route('/{record}/edit'),
+            'edit' => Pages\EditStockItem::route('/{record}/edit'),
         ];
     }
 
     public static function canCreate(): bool
     {
-        $user = auth()->user();
-
-        return $user &&
-            ! $user->isOwnerPusat() &&
-            ! $user->isRegionalLeader() &&
-            $user->branch_id !== null;
+        return static::can('create');
     }
 
     public static function canEdit(Model $record): bool
     {
-        $user = auth()->user();
-
-        return $user &&
-            ! $user->isOwnerPusat() &&
-            ! $user->isRegionalLeader() &&
-            $record->branch_id === $user->branch_id;
+        return static::can('update', $record);
     }
 
     public static function canDelete(Model $record): bool
     {
-        return static::canEdit($record);
+        return static::can('delete', $record);
     }
 }

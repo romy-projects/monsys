@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\SalesOrderResource\Pages;
 
 use App\Filament\Resources\SalesOrderResource;
+use App\Models\Branch;
 use App\Services\DocumentNumberService;
 use App\Support\OutstandingReconciliations;
 use Filament\Resources\Pages\CreateRecord;
@@ -15,9 +16,22 @@ class CreateSalesOrder extends CreateRecord
 
     protected function mutateFormDataBeforeCreate(array $data): array
     {
-        $data['document_type']     = 'so';
+        $user = auth()->user();
+        $mainBranch = Branch::mainBranch()->first();
+        abort_unless(
+            $user->hasPermission('sales_orders.create')
+                && $mainBranch !== null
+                && $user->canAccessBranch((int) $mainBranch->id),
+            403
+        );
+        if (! empty($data['destination_branch_id'])) {
+            abort_unless($user->canAccessBranch((int) $data['destination_branch_id']), 403);
+        }
+
+        $data['document_type'] = 'so';
         $data['counterparty_type'] = 'pertamina';
-        $data['requested_by']      = auth()->id();
+        $data['origin_branch_id'] = $mainBranch->id;
+        $data['requested_by'] = auth()->id();
 
         // D6: the credit this shipment settles must be referenced in the notes.
         $data['notes'] = OutstandingReconciliations::appendReference(

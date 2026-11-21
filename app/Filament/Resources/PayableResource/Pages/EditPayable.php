@@ -18,7 +18,7 @@ class EditPayable extends EditRecord
                 ->label('Riwayat Pembayaran')
                 ->icon('heroicon-o-list-bullet')
                 ->color('gray')
-                ->modalContent(fn() => view('filament.finance.payment-history', [
+                ->modalContent(fn () => view('filament.finance.payment-history', [
                     'payments' => $this->getRecord()->payments()->with('createdBy')->orderByDesc('paid_on')->orderByDesc('id')->get(),
                 ]))
                 ->modalSubmitAction(false)

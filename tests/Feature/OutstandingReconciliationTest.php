@@ -28,8 +28,11 @@ class OutstandingReconciliationTest extends TestCase
     use RefreshDatabase;
 
     private User $pusat;
+
     private User $branchOwner;
+
     private Branch $mainBranch;
+
     private Branch $branch;
 
     protected function setUp(): void
@@ -57,57 +60,57 @@ class OutstandingReconciliationTest extends TestCase
     private function deliverChain(int $paid, int $redeemed, int $delivered, string $suffix = '001'): array
     {
         $po = DeliveryOrder::create([
-            'do_number'             => "PO2026-{$suffix}",
-            'document_type'         => 'po',
-            'counterparty_type'     => 'branch',
-            'counterparty_name'     => 'SUM Pusat',
-            'origin_branch_id'      => $this->mainBranch->id,
+            'do_number' => "PO2026-{$suffix}",
+            'document_type' => 'po',
+            'counterparty_type' => 'branch',
+            'counterparty_name' => 'SUM Pusat',
+            'origin_branch_id' => $this->mainBranch->id,
             'destination_branch_id' => $this->branch->id,
-            'cylinder_type'         => '3kg',
-            'quantity_ordered'      => $paid,
-            'order_date'            => '2026-08-10',
-            'requested_by'          => $this->branchOwner->id,
-            'status'                => 'approved',
+            'cylinder_type' => '3kg',
+            'quantity_ordered' => $paid,
+            'order_date' => '2026-08-10',
+            'requested_by' => $this->branchOwner->id,
+            'status' => 'approved',
         ]);
 
         $so = DeliveryOrder::create([
-            'do_number'             => "SO2026-{$suffix}",
-            'document_type'         => 'so',
-            'counterparty_type'     => 'pertamina',
-            'counterparty_name'     => 'Pertamina',
-            'po_number'             => $po->do_number,
-            'origin_branch_id'      => $this->mainBranch->id,
+            'do_number' => "SO2026-{$suffix}",
+            'document_type' => 'so',
+            'counterparty_type' => 'pertamina',
+            'counterparty_name' => 'Pertamina',
+            'po_number' => $po->do_number,
+            'origin_branch_id' => $this->mainBranch->id,
             'destination_branch_id' => $this->branch->id,
-            'cylinder_type'         => '3kg',
-            'quantity_ordered'      => $redeemed,
-            'order_date'            => '2026-08-10',
-            'requested_by'          => $this->pusat->id,
-            'status'                => 'approved',
+            'cylinder_type' => '3kg',
+            'quantity_ordered' => $redeemed,
+            'order_date' => '2026-08-10',
+            'requested_by' => $this->pusat->id,
+            'status' => 'approved',
         ]);
 
         LpgPrice::create([
-            'branch_id'         => $this->branch->id,
+            'branch_id' => $this->branch->id,
             'purchase_order_id' => $po->id,
-            'cylinder_type'     => '3kg',
-            'purchase_price'    => 10000,
-            'selling_price'     => 13000,
-            'effective_date'    => '2026-08-01',
-            'created_by'        => $this->pusat->id,
+            'cylinder_type' => '3kg',
+            'purchase_price' => 10000,
+            'selling_price' => 13000,
+            'effective_date' => '2026-08-01',
+            'created_by' => $this->pusat->id,
         ]);
 
         $lo = DeliveryOrder::create([
-            'do_number'             => "LOT2026-{$suffix}",
-            'document_type'         => 'lo',
-            'lo_kind'               => 'transportir',
-            'po_number'             => $po->do_number,
-            'so_number'             => $so->do_number,
-            'origin_branch_id'      => $this->mainBranch->id,
+            'do_number' => "LOT2026-{$suffix}",
+            'document_type' => 'lo',
+            'lo_kind' => 'transportir',
+            'po_number' => $po->do_number,
+            'so_number' => $so->do_number,
+            'origin_branch_id' => $this->mainBranch->id,
             'destination_branch_id' => $this->branch->id,
-            'cylinder_type'         => '3kg',
-            'quantity_ordered'      => $delivered,
-            'order_date'            => '2026-08-11',
-            'requested_by'          => $this->pusat->id,
-            'status'                => 'approved',
+            'cylinder_type' => '3kg',
+            'quantity_ordered' => $delivered,
+            'order_date' => '2026-08-11',
+            'requested_by' => $this->pusat->id,
+            'status' => 'approved',
         ]);
 
         $lo->update(['status' => 'delivered']);
@@ -164,7 +167,6 @@ class OutstandingReconciliationTest extends TestCase
         $this->assertSame($first, OutstandingReconciliations::appendReference($first, $this->branch->id, '3kg'));
     }
 
-
     #[Test]
     public function the_outstanding_api_is_pusat_only(): void
     {
@@ -192,8 +194,8 @@ class OutstandingReconciliationTest extends TestCase
         $this->actingAs($this->pusat, 'sanctum');
         $this->postJson("/api/v1/reconciliations/settlements/{$settlement->id}/settle", [
             'settled_by_type' => ReconciliationSettlement::DOCUMENT_LOADING_ORDER,
-            'document_id'     => $lo->id,
-            'notes'           => 'Dikirim pada LO berikutnya.',
+            'document_id' => $lo->id,
+            'notes' => 'Dikirim pada LO berikutnya.',
         ])
             ->assertOk()
             ->assertJsonPath('data.status', 'settled')
@@ -211,7 +213,7 @@ class OutstandingReconciliationTest extends TestCase
         // Settling twice is refused, never overwritten.
         $this->postJson("/api/v1/reconciliations/settlements/{$settlement->id}/settle", [
             'settled_by_type' => ReconciliationSettlement::DOCUMENT_LOADING_ORDER,
-            'document_id'     => $lo->id,
+            'document_id' => $lo->id,
         ])->assertStatus(422);
     }
 
@@ -225,7 +227,7 @@ class OutstandingReconciliationTest extends TestCase
         $this->actingAs($this->pusat, 'sanctum');
         $this->postJson("/api/v1/reconciliations/settlements/{$settlement->id}/settle", [
             'settled_by_type' => ReconciliationSettlement::DOCUMENT_INVOICE,
-            'document_id'     => 999999,
+            'document_id' => 999999,
         ])->assertStatus(422);
 
         $this->assertSame(ReconciliationSettlement::STATUS_OPEN, $settlement->fresh()->status);
@@ -262,7 +264,7 @@ class OutstandingReconciliationTest extends TestCase
         Livewire::test(CreateLoadingOrder::class)
             ->fillForm([
                 'destination_branch_id' => $this->branch->id,
-                'cylinder_type'         => '3kg',
+                'cylinder_type' => '3kg',
             ])
             ->assertSee('Rekonsiliasi Tabung — Saldo Terbuka')
             ->assertSee('PO2026-010');
@@ -302,7 +304,7 @@ class OutstandingReconciliationTest extends TestCase
 
         Livewire::test(ReconciliationSettlementsRelationManager::class, [
             'ownerRecord' => $reconciliation,
-            'pageClass'   => ViewReconciliation::class,
+            'pageClass' => ViewReconciliation::class,
         ])
             ->assertSuccessful()
             ->assertCanSeeTableRecords($reconciliation->settlements);
@@ -338,6 +340,3 @@ class OutstandingReconciliationTest extends TestCase
             ->assertJsonPath('meta.total', 0);
     }
 }
-
-
-
