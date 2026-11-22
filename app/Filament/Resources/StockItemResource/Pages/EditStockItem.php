@@ -2,9 +2,9 @@
 
 namespace App\Filament\Resources\StockItemResource\Pages;
 
+use App\Filament\Resources\Pages\EditRecord;
 use App\Filament\Resources\StockItemResource;
 use Filament\Actions;
-use Filament\Resources\Pages\EditRecord;
 
 class EditStockItem extends EditRecord
 {

@@ -4,8 +4,9 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\ReceivableResource\Pages;
 use App\Models\Branch;
+use App\Models\Payment;
+use App\Models\PaymentDetail;
 use App\Models\Receivable;
-use App\Models\ReceivablePayment;
 use App\Services\PaymentLedger;
 use Filament\Forms;
 use Filament\Forms\Form;
@@ -256,7 +257,7 @@ class ReceivableResource extends Resource
                             ->required(),
                         Forms\Components\Select::make('method')
                             ->label('Metode')
-                            ->options(ReceivablePayment::methods())
+                            ->options(Payment::methods())
                             ->default('cash')
                             ->required(),
                         Forms\Components\TextInput::make('reference_no')
@@ -289,7 +290,7 @@ class ReceivableResource extends Resource
                     ->visible(fn (Receivable $record) => $record->payments()->exists())
                     ->modalHeading(fn (Receivable $record) => 'Riwayat Pembayaran - '.$record->buyer_name)
                     ->modalContent(fn (Receivable $record) => view('filament.finance.payment-history', [
-                        'payments' => $record->payments()->with('createdBy')->orderByDesc('paid_on')->orderByDesc('id')->get(),
+                        'payments' => $record->payments()->with('payment.createdBy')->latestFirst()->get(),
                     ]))
                     ->modalSubmitAction(false)
                     ->modalCancelActionLabel('Tutup'),
@@ -307,10 +308,10 @@ class ReceivableResource extends Resource
                         Forms\Components\Select::make('payment_id')
                             ->label('Pembayaran yang dibatalkan')
                             ->options($record->payments()
-                                ->orderByDesc('paid_on')
-                                ->orderByDesc('id')
+                                ->with('payment')
+                                ->latestFirst()
                                 ->get()
-                                ->mapWithKeys(fn (ReceivablePayment $payment) => [
+                                ->mapWithKeys(fn (PaymentDetail $payment) => [
                                     $payment->id => $payment->paid_on?->format('d M Y')
                                         .' - Rp '.number_format((float) $payment->amount, 0, ',', '.')
                                         .' ('.$payment->method_label.')',
@@ -318,7 +319,7 @@ class ReceivableResource extends Resource
                             ->required(),
                     ])
                     ->action(function (Receivable $record, array $data) {
-                        $payment = $record->payments()->find($data['payment_id']);
+                        $payment = $record->payments()->whereKey($data['payment_id'])->first();
 
                         if ($payment) {
                             app(PaymentLedger::class)->reverseReceivablePayment($payment);

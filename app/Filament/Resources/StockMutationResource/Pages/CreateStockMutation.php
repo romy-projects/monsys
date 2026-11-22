@@ -2,8 +2,8 @@
 
 namespace App\Filament\Resources\StockMutationResource\Pages;
 
+use App\Filament\Resources\Pages\CreateRecord;
 use App\Filament\Resources\StockMutationResource;
-use Filament\Resources\Pages\CreateRecord;
 
 class CreateStockMutation extends CreateRecord
 {

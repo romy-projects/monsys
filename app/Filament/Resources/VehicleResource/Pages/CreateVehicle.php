@@ -2,8 +2,8 @@
 
 namespace App\Filament\Resources\VehicleResource\Pages;
 
+use App\Filament\Resources\Pages\CreateRecord;
 use App\Filament\Resources\VehicleResource;
-use Filament\Resources\Pages\CreateRecord;
 
 class CreateVehicle extends CreateRecord
 {

@@ -2,9 +2,9 @@
 
 namespace App\Filament\Resources\StockCloseResource\Pages;
 
+use App\Filament\Resources\Pages\EditRecord;
 use App\Filament\Resources\StockCloseResource;
 use Filament\Actions;
-use Filament\Resources\Pages\EditRecord;
 
 class EditStockClose extends EditRecord
 {

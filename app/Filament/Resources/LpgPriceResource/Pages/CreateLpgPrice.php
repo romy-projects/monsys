@@ -3,7 +3,7 @@
 namespace App\Filament\Resources\LpgPriceResource\Pages;
 
 use App\Filament\Resources\LpgPriceResource;
-use Filament\Resources\Pages\CreateRecord;
+use App\Filament\Resources\Pages\CreateRecord;
 
 class CreateLpgPrice extends CreateRecord
 {

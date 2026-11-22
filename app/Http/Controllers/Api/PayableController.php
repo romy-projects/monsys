@@ -7,7 +7,8 @@ use App\Http\Resources\PayablePaymentResource;
 use App\Http\Resources\PayableResource;
 use App\Http\Traits\ApiResponse;
 use App\Models\Payable;
-use App\Models\PayablePayment;
+use App\Models\Payment;
+use App\Models\PaymentDetail;
 use App\Services\PaymentLedger;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -227,7 +228,7 @@ class PayableController extends Controller
         $data = $request->validate([
             'amount' => ['required', 'numeric', 'min:0.01'],
             'paid_on' => ['nullable', 'date'],
-            'method' => ['nullable', Rule::in(array_keys(PayablePayment::methods()))],
+            'method' => ['nullable', Rule::in(array_keys(Payment::methods()))],
             'reference_no' => ['nullable', 'string', 'max:100'],
             'notes' => ['nullable', 'string', 'max:1000'],
         ]);
@@ -239,12 +240,12 @@ class PayableController extends Controller
         }
 
         return $this->created(
-            new PayablePaymentResource($payment->load('deliveryOrder', 'createdBy'))
+            new PayablePaymentResource($payment->load('deliveryOrder', 'payment.createdBy'))
         );
     }
 
     /** BALI-17: reverse one payment row. Owner pusat only. */
-    public function destroyPayment(Payable $payable, PayablePayment $payment, Request $request): JsonResponse
+    public function destroyPayment(Payable $payable, PaymentDetail $payment, Request $request): JsonResponse
     {
         if (! $request->user()->hasPermission('payables.reverse_payment')) {
             return $this->forbidden();
@@ -261,15 +262,18 @@ class PayableController extends Controller
 
     private function withPayments(Payable $payable): Payable
     {
-        return $payable->load(['payments' => fn ($query) => $query->orderByDesc('paid_on')->orderByDesc('id')]);
+        // `paid_on` lives on the payment header now, so the ordering goes
+        // through the join that PaymentDetail::latestFirst() adds.
+        return $payable->load([
+            'payments' => fn ($query) => $query->with('payment')->latestFirst(),
+        ]);
     }
 
     private function paymentRows(Payable $payable)
     {
         return $payable->payments()
-            ->with('deliveryOrder', 'createdBy')
-            ->orderByDesc('paid_on')
-            ->orderByDesc('id')
+            ->with('deliveryOrder', 'payment.createdBy')
+            ->latestFirst()
             ->get();
     }
 

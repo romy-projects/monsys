@@ -3,8 +3,8 @@
 namespace App\Filament\Resources\ExpeditionResource\Pages;
 
 use App\Filament\Resources\ExpeditionResource;
+use App\Filament\Resources\Pages\EditRecord;
 use Filament\Actions;
-use Filament\Resources\Pages\EditRecord;
 
 class EditExpedition extends EditRecord
 {

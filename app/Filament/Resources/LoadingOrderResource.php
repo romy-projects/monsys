@@ -216,6 +216,34 @@ class LoadingOrderResource extends Resource
                         ->helperText('Optional on a Transportir LO — filled in later via "Update Expedition Details".')
                         ->columnSpan(1),
 
+                    Forms\Components\TextInput::make('pertamina_reference')
+                        ->label('No. SO Pertamina')
+                        ->nullable()
+                        ->maxLength(100)
+                        ->helperText('Nomor SO dari Pertamina, e.g. 4062182622/1.')
+                        ->columnSpan(1),
+
+                    Forms\Components\DatePicker::make('entered_transportir_at')
+                        ->label('Tgl Masuk Transportir')
+                        ->nullable()
+                        ->columnSpan(1),
+
+                    Forms\Components\DatePicker::make('container_filled_at')
+                        ->label('Tgl Isi Kontainer')
+                        ->nullable()
+                        ->columnSpan(1),
+
+                    Forms\Components\Select::make('expedition_fee_charged_to_buyer')
+                        ->label('Ongkos Expedisi')
+                        ->options([
+                            1 => 'Dibebankan ke pembeli',
+                            0 => 'Ditanggung HQ',
+                        ])
+                        ->placeholder('Ikuti pengaturan global')
+                        ->nullable()
+                        ->helperText('Menentukan apakah biaya expedisi masuk tagihan invoice.')
+                        ->columnSpan(1),
+
                     Forms\Components\DatePicker::make('eta')
                         ->label('ETA (Estimated Time of Arrival)')
                         ->nullable()
@@ -454,11 +482,35 @@ class LoadingOrderResource extends Resource
                         Forms\Components\TextInput::make('transportir_name')
                             ->label('Transportir Name (ad-hoc)')
                             ->nullable(),
+                        Forms\Components\TextInput::make('pertamina_reference')
+                            ->label('No. SO Pertamina')
+                            ->maxLength(100)
+                            ->nullable(),
+                        Forms\Components\DatePicker::make('entered_transportir_at')
+                            ->label('Tgl Masuk Transportir')
+                            ->nullable(),
+                        Forms\Components\DatePicker::make('container_filled_at')
+                            ->label('Tgl Isi Kontainer')
+                            ->nullable(),
+                        Forms\Components\Select::make('expedition_fee_charged_to_buyer')
+                            ->label('Ongkos Expedisi')
+                            ->options([
+                                1 => 'Dibebankan ke pembeli',
+                                0 => 'Ditanggung HQ',
+                            ])
+                            ->placeholder('Ikuti pengaturan global')
+                            ->nullable(),
                     ])
                     ->fillForm(fn (DeliveryOrder $record) => [
                         'expedition_id' => $record->expedition_id,
                         'container_number' => $record->container_number,
                         'transportir_name' => $record->transportir_name,
+                        'pertamina_reference' => $record->pertamina_reference,
+                        'entered_transportir_at' => $record->entered_transportir_at,
+                        'container_filled_at' => $record->container_filled_at,
+                        'expedition_fee_charged_to_buyer' => $record->expedition_fee_charged_to_buyer === null
+                            ? null
+                            : (int) $record->expedition_fee_charged_to_buyer,
                     ])
                     ->action(fn (DeliveryOrder $record, array $data) => $record->update($data))
                     ->modalHeading('Update Expedition Details')

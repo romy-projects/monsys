@@ -3,8 +3,8 @@
 namespace App\Filament\Resources\LoadingOrderResource\Pages;
 
 use App\Filament\Resources\LoadingOrderResource;
+use App\Filament\Resources\Pages\EditRecord;
 use Filament\Actions;
-use Filament\Resources\Pages\EditRecord;
 
 class EditLoadingOrder extends EditRecord
 {

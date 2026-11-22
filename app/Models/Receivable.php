@@ -50,10 +50,10 @@ class Receivable extends Model
         return $this->belongsTo(User::class, 'created_by');
     }
 
-    /** BALI-16: every payment instalment recorded against this receivable. */
+    /** Phase 19B: every allocation of a payment that settled this receivable. */
     public function payments(): HasMany
     {
-        return $this->hasMany(ReceivablePayment::class);
+        return $this->hasMany(PaymentDetail::class);
     }
 
     /**

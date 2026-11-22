@@ -3,10 +3,10 @@
 namespace App\Filament\Resources\DailySaleResource\Pages;
 
 use App\Filament\Resources\DailySaleResource;
+use App\Filament\Resources\Pages\EditRecord;
 use App\Models\Customer;
 use App\Models\LpgPrice;
 use Filament\Actions;
-use Filament\Resources\Pages\EditRecord;
 
 class EditDailySale extends EditRecord
 {

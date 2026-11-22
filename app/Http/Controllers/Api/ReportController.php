@@ -12,6 +12,7 @@ use App\Models\OperationalCost;
 use App\Models\Receivable;
 use App\Models\StockItem;
 use App\Models\StockMutation;
+use App\Support\TrialBalance;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -421,5 +422,32 @@ class ReportController extends Controller
             'grand_total' => (float) $grandTotal,
             'buckets' => $result,
         ]);
+    }
+
+    // ── Trial Balance (Neraca Saldo) ──────────────────────────
+
+    /**
+     * Phase 19B / T19B-03: the Neraca Saldo of the posted journal. Shares the
+     * `reports.journal.view` permission with the Jurnal Umum because it is the
+     * same ledger, only pivoted per account.
+     */
+    public function trialBalance(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        if (! $user->hasPermission('reports.journal.view')) {
+            return $this->forbidden();
+        }
+
+        if ($request->filled('branch_id') && ! $user->canAccessBranch((int) $request->branch_id)) {
+            return $this->forbidden();
+        }
+
+        $branchId = $request->filled('branch_id') ? (int) $request->branch_id : null;
+
+        return $this->success(TrialBalance::build(
+            $branchId,
+            $request->input('start_date', now()->startOfMonth()->toDateString()),
+            $request->input('end_date', now()->toDateString()),
+        ));
     }
 }

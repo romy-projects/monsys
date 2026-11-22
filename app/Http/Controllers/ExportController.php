@@ -7,6 +7,8 @@ use App\Models\DailySale;
 use App\Models\LpgPrice;
 use App\Models\OperationalCost;
 use App\Models\Receivable;
+use App\Support\JournalMapping;
+use App\Support\SalesDetailReport;
 use App\Support\XlsxWriter;
 use Illuminate\Http\Request;
 
@@ -210,5 +212,115 @@ class ExportController extends Controller
         $xlsx->addRow(['', '', '', '', '', 'TOTAL BALANCE:', '', '', (float) $records->sum(fn ($r) => max(0, $r->amount - $r->paid_amount))]);
 
         return $xlsx->download('receivables-'.now()->format('Y-m-d').'.xlsx');
+    }
+
+    /** Phase 19A / T19A-07: Jurnal Umum export from the operational tables. */
+    public function journal(Request $request)
+    {
+        $user = auth()->user();
+
+        if (! $user?->hasPermission('reports.journal.view')) {
+            abort(403, 'Access denied.');
+        }
+
+        $branchId = $this->resolveBranchId($request);
+        $startDate = $request->start_date ?: now()->startOfMonth()->toDateString();
+        $endDate = $request->end_date ?: now()->toDateString();
+
+        $rows = JournalMapping::build($branchId, $startDate, $endDate);
+        $totals = JournalMapping::totals($rows);
+
+        $xlsx = new XlsxWriter;
+        $xlsx->addRow(['Tanggal', 'No. Bukti', 'Keterangan', 'Kode Akun', 'Nama Akun', 'Cabang', 'Sumber', 'Debit (Rp)', 'Kredit (Rp)']);
+
+        foreach ($rows as $row) {
+            $xlsx->addRow([
+                $row['date'],
+                $row['ref'],
+                $row['description'],
+                $row['account_code'],
+                $row['account_name'],
+                $row['branch'],
+                $row['source'],
+                $row['debit'] ?: null,
+                $row['credit'] ?: null,
+            ]);
+        }
+
+        $xlsx->addRow([]);
+        $xlsx->addRow(['', '', 'TOTAL', '', '', '', '', $totals['debit'], $totals['credit']]);
+        $xlsx->addRow(['', '', $totals['balanced'] ? 'BALANCE' : 'SELISIH', '', '', '', '', '', $totals['difference']]);
+
+        return $xlsx->download('jurnal-umum-'.$startDate.'_'.$endDate.'.xlsx');
+    }
+
+    /** Phase 19A / T19A-08: SALES REPORT parity (payment date + method included). */
+    public function salesDetail(Request $request)
+    {
+        $user = auth()->user();
+
+        if (! $user?->hasPermission('reports.sales_detail.view')) {
+            abort(403, 'Access denied.');
+        }
+
+        $branchId = $this->resolveBranchId($request);
+        $startDate = $request->start_date ?: now()->startOfMonth()->toDateString();
+        $endDate = $request->end_date ?: now()->toDateString();
+
+        $report = SalesDetailReport::build($branchId, $startDate, $endDate);
+
+        $xlsx = new XlsxWriter;
+        $xlsx->addRow([
+            'Tgl Faktur', 'No Faktur', 'Pangkalan', 'Cabang', 'Tipe', 'Qty', 'Harga', 'Total Barang',
+            'Ongkos Expedisi', 'Total Tagihan', 'Tgl Bayar', 'Metode', 'No. Referensi',
+            'Dibayar', 'Sisa', 'Status', 'No. Pertamina',
+        ]);
+
+        foreach ($report['rows'] as $row) {
+            $xlsx->addRow([
+                $row['issue_date'],
+                $row['invoice_number'],
+                $row['buyer'],
+                $row['branch'],
+                $row['cylinder_type'],
+                $row['quantity'],
+                $row['unit_price'],
+                $row['product_total'],
+                $row['expedition_fee'],
+                $row['total'],
+                $row['paid_on'],
+                $row['method'],
+                $row['reference_no'],
+                $row['paid'],
+                $row['balance'],
+                $row['status'],
+                $row['pertamina_reference'],
+            ]);
+        }
+
+        $xlsx->addRow([]);
+        $xlsx->addRow([
+            '', '', '', '', 'TOTAL', $report['totals']['quantity'], '', $report['totals']['product'],
+            $report['totals']['expedition_fee'], $report['totals']['total'], '', '', '',
+            $report['totals']['paid'], $report['totals']['balance'], '', '',
+        ]);
+
+        return $xlsx->download('sales-detail-'.$startDate.'_'.$endDate.'.xlsx');
+    }
+
+    /** Branch filter resolution shared by the report exports. */
+    private function resolveBranchId(Request $request): ?int
+    {
+        $user = auth()->user();
+        $branchId = $request->branch_id;
+
+        if (! $branchId && ! $user->canAccessAllBranches()) {
+            $branchIds = $user->accessibleBranchIds();
+            $branchId = $user->branch_id && $user->canAccessBranch((int) $user->branch_id)
+                ? $user->branch_id
+                : (count($branchIds) === 1 ? $branchIds[0] : null);
+        }
+
+        return $branchId ? (int) $branchId : null;
     }
 }

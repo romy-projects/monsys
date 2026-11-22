@@ -4,7 +4,9 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\OperationalCostResource\Pages;
 use App\Models\Branch;
+use App\Models\ChartOfAccount;
 use App\Models\OperationalCost;
+use App\Models\Payment;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
@@ -77,6 +79,55 @@ class OperationalCostResource extends Resource
                         ->required()
                         ->prefix('Rp')
                         ->minValue(0)
+                        ->columnSpan(1),
+
+                    Forms\Components\Select::make('chart_of_account_id')
+                        ->label('Akun Biaya (COA)')
+                        ->options(fn () => ChartOfAccount::active()
+                            ->where('account_group', 'expense')
+                            ->orderBy('code')
+                            ->get()
+                            ->mapWithKeys(fn (ChartOfAccount $account) => [
+                                $account->id => $account->code.' — '.$account->name,
+                            ]))
+                        ->searchable()
+                        ->helperText('Kosongkan untuk memakai akun default kategori.')
+                        ->columnSpan(1),
+
+                    Forms\Components\TextInput::make('qty')
+                        ->label('Qty')
+                        ->numeric()
+                        ->minValue(0)
+                        ->columnSpan(1),
+
+                    Forms\Components\TextInput::make('unit_price')
+                        ->label('Harga Satuan')
+                        ->numeric()
+                        ->prefix('Rp')
+                        ->minValue(0)
+                        ->helperText('Qty × harga satuan seharusnya sama dengan Amount.')
+                        ->columnSpan(1),
+
+                    Forms\Components\Select::make('payment_method')
+                        ->label('Metode Pembayaran')
+                        ->options(Payment::methods())
+                        ->default('cash')
+                        ->columnSpan(1),
+
+                    Forms\Components\Select::make('cash_account_id')
+                        ->label('Dibayar dari Kas/Bank')
+                        ->options(fn () => ChartOfAccount::cashAccounts()
+                            ->orderBy('code')
+                            ->get()
+                            ->mapWithKeys(fn (ChartOfAccount $account) => [
+                                $account->id => $account->code.' — '.$account->name,
+                            ]))
+                        ->searchable()
+                        ->columnSpan(1),
+
+                    Forms\Components\TextInput::make('reference_no')
+                        ->label('No. Referensi')
+                        ->maxLength(50)
                         ->columnSpan(1),
 
                     Forms\Components\TextInput::make('description')

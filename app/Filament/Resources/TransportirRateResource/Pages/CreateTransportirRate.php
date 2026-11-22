@@ -2,8 +2,8 @@
 
 namespace App\Filament\Resources\TransportirRateResource\Pages;
 
+use App\Filament\Resources\Pages\CreateRecord;
 use App\Filament\Resources\TransportirRateResource;
-use Filament\Resources\Pages\CreateRecord;
 
 class CreateTransportirRate extends CreateRecord
 {

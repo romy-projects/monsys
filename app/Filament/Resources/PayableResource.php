@@ -5,7 +5,8 @@ namespace App\Filament\Resources;
 use App\Filament\Resources\PayableResource\Pages;
 use App\Models\DeliveryOrder;
 use App\Models\Payable;
-use App\Models\PayablePayment;
+use App\Models\Payment;
+use App\Models\PaymentDetail;
 use App\Models\Transportir;
 use App\Services\PaymentLedger;
 use Filament\Forms;
@@ -215,7 +216,7 @@ class PayableResource extends Resource
                             ->required(),
                         Forms\Components\Select::make('method')
                             ->label('Metode')
-                            ->options(PayablePayment::methods())
+                            ->options(Payment::methods())
                             ->default('cash')
                             ->required(),
                         Forms\Components\TextInput::make('reference_no')
@@ -269,7 +270,7 @@ class PayableResource extends Resource
                     ->visible(fn (Payable $record) => $record->payments()->exists())
                     ->modalHeading(fn (Payable $record) => 'Riwayat Pembayaran - '.($record->deliveryOrder?->do_number ?? $record->description))
                     ->modalContent(fn (Payable $record) => view('filament.finance.payment-history', [
-                        'payments' => $record->payments()->with('createdBy')->orderByDesc('paid_on')->orderByDesc('id')->get(),
+                        'payments' => $record->payments()->with('payment.createdBy')->latestFirst()->get(),
                     ]))
                     ->modalSubmitAction(false)
                     ->modalCancelActionLabel('Tutup'),
@@ -287,10 +288,10 @@ class PayableResource extends Resource
                         Forms\Components\Select::make('payment_id')
                             ->label('Pembayaran yang dibatalkan')
                             ->options($record->payments()
-                                ->orderByDesc('paid_on')
-                                ->orderByDesc('id')
+                                ->with('payment')
+                                ->latestFirst()
                                 ->get()
-                                ->mapWithKeys(fn (PayablePayment $payment) => [
+                                ->mapWithKeys(fn (PaymentDetail $payment) => [
                                     $payment->id => $payment->paid_on?->format('d M Y')
                                         .' - Rp '.number_format((float) $payment->amount, 0, ',', '.')
                                         .' ('.$payment->method_label.')',
@@ -298,7 +299,7 @@ class PayableResource extends Resource
                             ->required(),
                     ])
                     ->action(function (Payable $record, array $data) {
-                        $payment = $record->payments()->find($data['payment_id']);
+                        $payment = $record->payments()->whereKey($data['payment_id'])->first();
 
                         if ($payment) {
                             app(PaymentLedger::class)->reversePayablePayment($payment);

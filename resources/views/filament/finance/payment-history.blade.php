@@ -3,7 +3,9 @@
     Receivables and Payables tables (and on their Edit pages).
 
     Expects:
-      $payments - collection of ReceivablePayment / PayablePayment rows
+      $payments - collection of PaymentDetail rows (Phase 19B allocation
+                  ledger); date/method/reference/recorder are delegated to the
+                  payment header, so `$payment->payment` should be eager loaded.
 --}}
 @php
     $fmt = fn ($n) => 'Rp ' . number_format((float) $n, 0, ',', '.');
@@ -38,7 +40,7 @@
                             <td class="px-3 py-2">{{ $payment->method_label }}</td>
                             <td class="px-3 py-2">{{ $payment->reference_no ?: '-' }}</td>
                             <td class="px-3 py-2">{{ $payment->notes ?: '-' }}</td>
-                            <td class="px-3 py-2">{{ $payment->createdBy?->name ?? '-' }}</td>
+                            <td class="px-3 py-2">{{ $payment->payment?->createdBy?->name ?? '-' }}</td>
                         </tr>
                     @endforeach
                 </tbody>

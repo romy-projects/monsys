@@ -2,9 +2,9 @@
 
 namespace App\Filament\Resources\TransportirRateResource\Pages;
 
+use App\Filament\Resources\Pages\EditRecord;
 use App\Filament\Resources\TransportirRateResource;
 use Filament\Actions;
-use Filament\Resources\Pages\EditRecord;
 
 class EditTransportirRate extends EditRecord
 {

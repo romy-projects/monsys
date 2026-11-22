@@ -2,8 +2,8 @@
 
 namespace App\Filament\Resources\StockCloseResource\Pages;
 
+use App\Filament\Resources\Pages\CreateRecord;
 use App\Filament\Resources\StockCloseResource;
-use Filament\Resources\Pages\CreateRecord;
 
 class CreateStockClose extends CreateRecord
 {

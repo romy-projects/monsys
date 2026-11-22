@@ -2,8 +2,8 @@
 
 namespace App\Filament\Resources\StockItemResource\Pages;
 
+use App\Filament\Resources\Pages\CreateRecord;
 use App\Filament\Resources\StockItemResource;
-use Filament\Resources\Pages\CreateRecord;
 
 class CreateStockItem extends CreateRecord
 {

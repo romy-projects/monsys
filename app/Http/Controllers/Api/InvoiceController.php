@@ -10,6 +10,7 @@ use App\Models\DeliveryOrder;
 use App\Models\Invoice;
 use App\Models\TransportirRate;
 use App\Services\DocumentNumberService;
+use App\Services\PaymentLedger;
 use App\Support\InvoicePricing;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -126,7 +127,7 @@ class InvoiceController extends Controller
 
         $data['lpg_price_id'] = $price->id;
         $data['unit_price'] = $price->selling_price;
-        $data['total_amount'] = (int) $data['quantity'] * (float) $data['unit_price'];
+        $data['total_amount'] = InvoicePricing::total($data);
 
         // BALI-14: snapshot the transportir rate / expedition fee of the linked
         // LO and, when configured, add the delivery fee to the invoice total.
@@ -176,6 +177,10 @@ class InvoiceController extends Controller
             'reference_type' => 'sometimes|in:branch,customer',
             'reference_id' => 'sometimes|nullable|integer',
             'status' => 'sometimes|in:draft,issued,cancelled',
+            'loading_order_number' => 'sometimes|nullable|string|max:100',
+            'transportir_rate_at_sale' => 'sometimes|nullable|numeric|min:0',
+            'expedition_cost_at_sale' => 'sometimes|nullable|numeric|min:0',
+            'expedition_fee_amount' => 'sometimes|numeric|min:0',
             'notes' => 'nullable|string',
         ]);
         $validator->after(function ($validator) use ($request, $invoice, $user): void {
@@ -224,11 +229,22 @@ class InvoiceController extends Controller
             $data['customer_id'] = $data['reference_type'] === 'customer' ? $referenceId : null;
         }
 
-        if (isset($data['quantity']) || isset($data['unit_price'])) {
-            $qty = $data['quantity'] ?? $invoice->quantity;
-            $unit = $data['unit_price'] ?? $invoice->unit_price;
-            // Keep any delivery fee already charged on this invoice.
-            $data['total_amount'] = (int) $qty * (float) $unit + (float) ($invoice->expedition_fee_amount ?? 0);
+        // Phase 19B / T19B-11 (D5): the delivery fields are editable here too and
+        // the total always goes through the single definition in InvoicePricing.
+        if (array_intersect(['quantity', 'unit_price', 'expedition_fee_amount', 'expedition_cost_at_sale'], array_keys($data)) !== []) {
+            $merged = [
+                'unit_price' => $data['unit_price'] ?? (float) $invoice->unit_price,
+                'quantity' => $data['quantity'] ?? (int) $invoice->quantity,
+                'expedition_fee_amount' => array_key_exists('expedition_fee_amount', $data)
+                    ? $data['expedition_fee_amount']
+                    : (float) $invoice->expedition_fee_amount,
+                'expedition_cost_at_sale' => array_key_exists('expedition_cost_at_sale', $data)
+                    ? $data['expedition_cost_at_sale']
+                    : $invoice->expedition_cost_at_sale,
+            ];
+
+            InvoicePricing::assertExpeditionFeeWithinCost($merged);
+            $data['total_amount'] = InvoicePricing::total($merged);
         }
 
         $invoice->update($data);
@@ -266,13 +282,25 @@ class InvoiceController extends Controller
 
         $data = Validator::make($request->all(), [
             'amount' => 'required|numeric|min:1',
+            'paid_on' => 'nullable|date',
+            'method' => 'nullable|in:cash,transfer,giro,other',
+            'cash_account_id' => 'nullable|exists:chart_of_accounts,id',
+            'reference_no' => 'nullable|string|max:50',
+            'notes' => 'nullable|string|max:255',
         ])->validated();
 
-        $invoice->paid_amount += (float) $data['amount'];
-        $invoice->save();
-        $invoice->recalculateStatus();
+        // Phase 19A / T19A-03: every payment is a ledger row, never a hand-added
+        // paid_amount — the Jurnal export needs the date and the method.
+        $payment = app(PaymentLedger::class)->recordInvoice($invoice, $data, $user->id);
 
-        return $this->success($invoice->fresh(['branch', 'customer', 'lpgPrice']), 'Payment recorded.');
+        $fresh = $invoice->fresh(['branch', 'customer', 'lpgPrice']);
+
+        // Backward compatible payload: the invoice fields stay at the top level,
+        // the ledger row is added under `payment`.
+        return $this->success(
+            array_merge($fresh->toArray(), ['payment' => $payment->toArray()]),
+            'Payment recorded.'
+        );
     }
 
     /** Issue a draft invoice. */
@@ -330,19 +358,17 @@ class InvoiceController extends Controller
             )
             : 0.0;
 
-        // The fee may only be passed on to the branch that actually received the goods.
+        // The fee may only be passed on to the branch that actually received the
+        // goods. A per-shipment decision on the DO wins over the global config.
         $sameBranch = (int) $lo->destination_branch_id === (int) ($data['branch_id'] ?? 0);
         $charge = $sameBranch
             && $fee > 0
-            && (bool) config('app.expedition_fee_charged_to_buyer', false);
+            && InvoicePricing::expeditionChargedToBuyer($lo->expedition_fee_charged_to_buyer);
 
         $data['transportir_rate_at_sale'] = $rate;
         $data['expedition_cost_at_sale'] = $fee;
         $data['expedition_fee_amount'] = $charge ? $fee : 0;
-
-        if ($charge) {
-            $data['total_amount'] = (float) $data['total_amount'] + $fee;
-        }
+        $data['total_amount'] = InvoicePricing::total($data);
 
         return $data;
     }

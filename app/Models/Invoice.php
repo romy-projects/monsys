@@ -3,9 +3,11 @@
 namespace App\Models;
 
 use App\Models\Concerns\ScopesToAccessibleBranches;
+use App\Support\InvoicePricing;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
@@ -31,6 +33,7 @@ class Invoice extends Model
         'paid_amount',
         'issue_date',
         'due_date',
+        'redeemed_on',
         'status',
         'notes',
         'created_by',
@@ -39,6 +42,7 @@ class Invoice extends Model
     protected $casts = [
         'issue_date' => 'date',
         'due_date' => 'date',
+        'redeemed_on' => 'date',
         'unit_price' => 'decimal:2',
         'transportir_rate_at_sale' => 'decimal:2',
         'expedition_cost_at_sale' => 'decimal:2',
@@ -51,6 +55,34 @@ class Invoice extends Model
     public function branch(): BelongsTo
     {
         return $this->belongsTo(Branch::class);
+    }
+
+    /**
+     * Phase 19B / T19B-11 (decision D5): the bill total is always derived from
+     * the price inputs, so the Filament create/edit pages, the API and any
+     * import can no longer drift apart — EditInvoice used to drop the
+     * expedition fee while the API added it.
+     *
+     * Records without a usable quantity/price (legacy imports, free samples)
+     * keep whatever total they were given.
+     */
+    protected static function booted(): void
+    {
+        static::saving(function (self $invoice): void {
+            if (! $invoice->isDirty(['unit_price', 'quantity', 'expedition_fee_amount'])) {
+                return;
+            }
+
+            if ((float) $invoice->unit_price <= 0 || (int) $invoice->quantity <= 0) {
+                return;
+            }
+
+            $invoice->total_amount = InvoicePricing::total([
+                'unit_price' => (float) $invoice->unit_price,
+                'quantity' => (int) $invoice->quantity,
+                'expedition_fee_amount' => (float) ($invoice->expedition_fee_amount ?? 0),
+            ]);
+        });
     }
 
     public function customer(): BelongsTo
@@ -82,6 +114,22 @@ class Invoice extends Model
     public function createdBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
+    }
+
+    /** Phase 19B: every allocation of a payment that settled this invoice. */
+    public function payments(): HasMany
+    {
+        return $this->hasMany(PaymentDetail::class);
+    }
+
+    /**
+     * Derive paid_amount from the payment ledger and persist it together with
+     * the status. The ledger is the only source of truth.
+     */
+    public function syncPaidFromLedger(): void
+    {
+        $this->paid_amount = (float) $this->payments()->sum('amount');
+        $this->recalculateStatus();
     }
 
     /** Remaining unpaid balance. */

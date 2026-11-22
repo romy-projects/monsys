@@ -2,8 +2,8 @@
 
 namespace App\Filament\Resources\ReceivableResource\Pages;
 
+use App\Filament\Resources\Pages\CreateRecord;
 use App\Filament\Resources\ReceivableResource;
-use Filament\Resources\Pages\CreateRecord;
 
 class CreateReceivable extends CreateRecord
 {

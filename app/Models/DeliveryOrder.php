@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\InvoicePricing;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -39,6 +40,10 @@ class DeliveryOrder extends Model
         'quantity_ordered',
         'quantity_received',
         'container_number',
+        'pertamina_reference',
+        'entered_transportir_at',
+        'container_filled_at',
+        'expedition_fee_charged_to_buyer',
         'order_date',
         'eta',
         'loading_date',
@@ -60,6 +65,9 @@ class DeliveryOrder extends Model
         'received_date' => 'date',
         'approved_at' => 'datetime',
         'expedition_cost' => 'decimal:2',
+        'entered_transportir_at' => 'date',
+        'container_filled_at' => 'date',
+        'expedition_fee_charged_to_buyer' => 'boolean',
     ];
 
     // =========================================================
@@ -279,5 +287,15 @@ class DeliveryOrder extends Model
     public function expeditionFee(): float
     {
         return $this->bearsExpeditionCost() ? (float) ($this->expedition_cost ?? 0) : 0.0;
+    }
+
+    /**
+     * Phase 19A / T19A-06: may this shipment's delivery fee be billed to the
+     * buyer? A per-shipment value on the DO wins; null falls back to
+     * config('app.expedition_fee_charged_to_buyer').
+     */
+    public function expeditionFeeChargedToBuyer(): bool
+    {
+        return InvoicePricing::expeditionChargedToBuyer($this->expedition_fee_charged_to_buyer);
     }
 }

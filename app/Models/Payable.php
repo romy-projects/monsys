@@ -40,10 +40,10 @@ class Payable extends Model
         return $this->belongsTo(DeliveryOrder::class);
     }
 
-    /** BALI-17: every payment instalment recorded against this payable. */
+    /** Phase 19B: every allocation of a payment that settled this payable. */
     public function payments(): HasMany
     {
-        return $this->hasMany(PayablePayment::class);
+        return $this->hasMany(PaymentDetail::class);
     }
 
     /**

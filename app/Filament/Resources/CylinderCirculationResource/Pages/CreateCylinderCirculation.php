@@ -3,7 +3,7 @@
 namespace App\Filament\Resources\CylinderCirculationResource\Pages;
 
 use App\Filament\Resources\CylinderCirculationResource;
-use Filament\Resources\Pages\CreateRecord;
+use App\Filament\Resources\Pages\CreateRecord;
 
 class CreateCylinderCirculation extends CreateRecord
 {

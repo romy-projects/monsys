@@ -4,6 +4,8 @@ namespace App\Services;
 
 use App\Models\DeliveryOrder;
 use App\Models\Invoice;
+use App\Models\Payment;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -32,6 +34,7 @@ class DocumentNumberService
         'lo_e' => [DeliveryOrder::class, 'do_number'],
         'po' => [DeliveryOrder::class, 'do_number'],
         'inv' => [Invoice::class, 'invoice_number'],
+        'pmt' => [Payment::class, 'payment_no'],
     ];
 
     /**
@@ -49,14 +52,15 @@ class DocumentNumberService
         'lo_e' => 'LOE',
         'po' => 'PO',
         'inv' => 'INV',
+        'pmt' => 'PM',
     ];
 
     /**
      * Reserve and return the next number for a document type.
      *
-     * @param  string  $type  One of: so, do, lo, lo_t, lo_e, po, inv
+     * @param  string  $type  One of: so, do, lo, lo_t, lo_e, po, inv, pmt
      * @param  int|null  $year  Defaults to the current year
-     * @return string e.g. 'PO2026-001', 'LOT2026-001', 'LOE2026-001'
+     * @return string e.g. 'PO2026-001', 'LOT2026-001', 'PM2026-001'
      */
     public function next(string $type, ?int $year = null): string
     {
@@ -129,6 +133,19 @@ class DocumentNumberService
     {
         [$model, $column] = self::SOURCES[$type] ?? [DeliveryOrder::class, 'do_number'];
 
-        return $model::withTrashed()->where($column, $candidate)->exists();
+        // Soft-deleted rows keep their number in the database (so the unique
+        // index still rejects it), hence withTrashed() — but not every source
+        // model soft deletes (`Payment` does not). `withTrashed()` is a builder
+        // macro registered by SoftDeletingScope, not a model method, so the
+        // check has to look at the traits the model actually uses.
+        $usesSoftDeletes = in_array(
+            SoftDeletes::class,
+            class_uses_recursive($model),
+            true
+        );
+
+        $query = $usesSoftDeletes ? $model::withTrashed() : $model::query();
+
+        return $query->where($column, $candidate)->exists();
     }
 }

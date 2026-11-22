@@ -147,6 +147,7 @@ Route::group([], function () {
         Route::get('reports/stock-audit', [ReportController::class, 'stockAudit']);
         Route::get('reports/hpp', [ReportController::class, 'hpp']);
         Route::get('reports/receivables-aging', [ReportController::class, 'receivablesAging']);
+Route::get('reports/trial-balance', [ReportController::class, 'trialBalance']);
 
         // Scanner
         Route::post('scan', [ScanController::class, 'scan']);

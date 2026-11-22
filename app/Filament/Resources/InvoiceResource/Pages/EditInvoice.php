@@ -3,11 +3,11 @@
 namespace App\Filament\Resources\InvoiceResource\Pages;
 
 use App\Filament\Resources\InvoiceResource;
+use App\Filament\Resources\Pages\EditRecord;
 use App\Models\Branch;
 use App\Models\Customer;
 use App\Support\InvoicePricing;
 use Filament\Actions;
-use Filament\Resources\Pages\EditRecord;
 
 class EditInvoice extends EditRecord
 {
@@ -39,7 +39,11 @@ class EditInvoice extends EditRecord
 
         $data['lpg_price_id'] = $price->id;
         $data['unit_price'] = $price->selling_price;
-        $data['total_amount'] = (int) ($data['quantity'] ?? 0) * (float) ($data['unit_price'] ?? 0);
+
+        // Phase 19B / T19B-11 (D5): the expedition fee is part of the total on
+        // the create page and in the API — the edit page used to drop it.
+        InvoicePricing::assertExpeditionFeeWithinCost($data);
+        $data['total_amount'] = InvoicePricing::total($data);
 
         // Map polymorphic reference
         $type = $data['reference_type'] ?? 'customer';

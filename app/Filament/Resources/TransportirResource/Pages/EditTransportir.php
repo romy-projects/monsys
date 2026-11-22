@@ -2,9 +2,9 @@
 
 namespace App\Filament\Resources\TransportirResource\Pages;
 
+use App\Filament\Resources\Pages\EditRecord;
 use App\Filament\Resources\TransportirResource;
 use Filament\Actions;
-use Filament\Resources\Pages\EditRecord;
 
 class EditTransportir extends EditRecord
 {

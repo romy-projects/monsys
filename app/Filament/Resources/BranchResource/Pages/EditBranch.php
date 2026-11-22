@@ -3,8 +3,8 @@
 namespace App\Filament\Resources\BranchResource\Pages;
 
 use App\Filament\Resources\BranchResource;
+use App\Filament\Resources\Pages\EditRecord;
 use Filament\Actions;
-use Filament\Resources\Pages\EditRecord;
 
 class EditBranch extends EditRecord
 {

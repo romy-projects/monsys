@@ -25,6 +25,62 @@ class InvoicePricing
         return filled($data['branch_id'] ?? null) ? (int) $data['branch_id'] : null;
     }
 
+    /**
+     * Phase 19A / T19A-05: the single definition of an invoice total
+     * (product lines + any delivery fee passed on to the buyer).
+     *
+     * The Filament create page and `Api\InvoiceController` both use this, so the
+     * two entry points can no longer disagree about whether the expedition fee
+     * is part of the bill.
+     *
+     * @param  array<string, mixed>  $data
+     */
+    public static function total(array $data): float
+    {
+        $product = (float) ($data['unit_price'] ?? 0) * (float) ($data['quantity'] ?? 0);
+
+        return round($product + (float) ($data['expedition_fee_amount'] ?? 0), 2);
+    }
+
+    /**
+     * Phase 19A / T19A-06: a shipment may decide per transaction whether the
+     * delivery fee is billed to the buyer (`delivery_orders.expedition_fee_charged_to_buyer`);
+     * when the column is null the global config wins.
+     */
+    public static function expeditionChargedToBuyer(mixed $override): bool
+    {
+        return $override === null
+            ? (bool) config('app.expedition_fee_charged_to_buyer', false)
+            : (bool) $override;
+    }
+
+    /**
+     * Phase 19B / T19B-11: a delivery fee passed on to the buyer can never
+     * exceed the real expedition cost of the shipment, and never be negative.
+     * Without this guard a mistyped fee would inflate both AR and the recovery
+     * line 5-132 (see docs/lapkeu-gap-analysis.md §6 D5).
+     *
+     * @param  array<string, mixed>  $data
+     */
+    public static function assertExpeditionFeeWithinCost(array $data): void
+    {
+        $fee = round((float) ($data['expedition_fee_amount'] ?? 0), 2);
+
+        if ($fee < 0) {
+            throw ValidationException::withMessages([
+                'expedition_fee_amount' => 'Ongkos kirim yang dibebankan ke pembeli tidak boleh negatif.',
+            ]);
+        }
+
+        $cost = $data['expedition_cost_at_sale'] ?? null;
+
+        if ($fee > 0 && $cost !== null && round((float) $cost, 2) < $fee) {
+            throw ValidationException::withMessages([
+                'expedition_fee_amount' => 'Ongkos kirim yang dibebankan ke pembeli tidak boleh melebihi biaya expedisi sebenarnya.',
+            ]);
+        }
+    }
+
     public static function requiredPrice(array $data): LpgPrice
     {
         $type = (string) ($data['cylinder_type'] ?? '');

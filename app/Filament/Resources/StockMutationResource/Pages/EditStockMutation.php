@@ -2,9 +2,9 @@
 
 namespace App\Filament\Resources\StockMutationResource\Pages;
 
+use App\Filament\Resources\Pages\EditRecord;
 use App\Filament\Resources\StockMutationResource;
 use Filament\Actions;
-use Filament\Resources\Pages\EditRecord;
 
 class EditStockMutation extends EditRecord
 {

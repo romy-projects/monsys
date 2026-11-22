@@ -2,10 +2,10 @@
 
 namespace App\Filament\Resources\PayableResource\Pages;
 
+use App\Filament\Resources\Pages\EditRecord;
 use App\Filament\Resources\PayableResource;
 use Filament\Actions;
 use Filament\Notifications\Notification;
-use Filament\Resources\Pages\EditRecord;
 
 class EditPayable extends EditRecord
 {
@@ -19,7 +19,7 @@ class EditPayable extends EditRecord
                 ->icon('heroicon-o-list-bullet')
                 ->color('gray')
                 ->modalContent(fn () => view('filament.finance.payment-history', [
-                    'payments' => $this->getRecord()->payments()->with('createdBy')->orderByDesc('paid_on')->orderByDesc('id')->get(),
+                    'payments' => $this->getRecord()->payments()->with('payment.createdBy')->latestFirst()->get(),
                 ]))
                 ->modalSubmitAction(false)
                 ->modalCancelActionLabel('Tutup'),

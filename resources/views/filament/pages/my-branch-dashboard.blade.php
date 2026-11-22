@@ -22,12 +22,12 @@
 
     {{-- Key Stats --}}
     <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-900">
+        <div class="rounded-xl border border-gray-200 bg-white px-6 py-4 shadow-sm dark:border-gray-700 dark:bg-gray-900">
             <p class="text-xs text-gray-500 dark:text-gray-400">Today's Revenue</p>
             <p class="mt-1 text-xl font-bold text-green-600 dark:text-green-400">{{ $fmt($d['todaySales']) }}</p>
             <p class="mt-0.5 text-xs text-gray-500">{{ number_format($d['todayQty']) }} pcs sold</p>
         </div>
-        <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-900">
+        <div class="rounded-xl border border-gray-200 bg-white px-6 py-4 shadow-sm dark:border-gray-700 dark:bg-gray-900">
             <p class="text-xs text-gray-500 dark:text-gray-400">Month Revenue</p>
             <p class="mt-1 text-xl font-bold text-blue-600 dark:text-blue-400">{{ $fmt($d['monthRevenue']) }}</p>
             @if($d['achievementPct'] !== null)
@@ -42,12 +42,12 @@
             <p class="mt-0.5 text-xs text-gray-500">{{ now()->format('M Y') }} · No target set</p>
             @endif
         </div>
-        <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-900">
+        <div class="rounded-xl border border-gray-200 bg-white px-6 py-4 shadow-sm dark:border-gray-700 dark:bg-gray-900">
             <p class="text-xs text-gray-500 dark:text-gray-400">Month Costs</p>
             <p class="mt-1 text-xl font-bold text-red-600 dark:text-red-400">{{ $fmt($d['monthCosts']) }}</p>
             <p class="mt-0.5 text-xs text-gray-500">Gross: {{ $fmt($d['monthRevenue'] - $d['monthCosts']) }}</p>
         </div>
-        <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-900">
+        <div class="rounded-xl border border-gray-200 bg-white px-6 py-4 shadow-sm dark:border-gray-700 dark:bg-gray-900">
             <p class="text-xs text-gray-500 dark:text-gray-400">Pending POs</p>
             <p class="mt-1 text-xl font-bold {{ $d['pendingDOs'] > 0 ? 'text-warning-600 dark:text-warning-400' : 'text-gray-500' }}">
                 {{ $d['pendingDOs'] }} orders

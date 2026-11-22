@@ -2,9 +2,9 @@
 
 namespace App\Filament\Resources\SalesOrderResource\Pages;
 
+use App\Filament\Resources\Pages\EditRecord;
 use App\Filament\Resources\SalesOrderResource;
 use Filament\Actions;
-use Filament\Resources\Pages\EditRecord;
 
 class EditSalesOrder extends EditRecord
 {

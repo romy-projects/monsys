@@ -5,11 +5,17 @@ namespace App\Filament\Resources;
 use App\Filament\Resources\InvoiceResource\Pages;
 use App\Filament\Support\OutstandingReconciliationSection;
 use App\Models\Branch;
+use App\Models\ChartOfAccount;
 use App\Models\Customer;
+use App\Models\DeliveryOrder;
 use App\Models\Invoice;
+use App\Models\Payment;
+use App\Services\PaymentLedger;
+use App\Support\InvoicePricing;
 use App\Support\LpgPriceFormState;
 use Filament\Forms;
 use Filament\Forms\Form;
+use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
@@ -155,13 +161,12 @@ class InvoiceResource extends Resource
                         ->columnSpan(1),
 
                     Forms\Components\Placeholder::make('total_amount_preview')
-                        ->label('Total Amount')
-                        ->content(fn (Forms\Get $get) => 'Rp '.number_format(
-                            (int) ($get('quantity') ?? 0) * (float) ($get('unit_price') ?? 0),
-                            0,
-                            ',',
-                            '.'
-                        ))
+                        ->label('Total Amount (incl. delivery fee)')
+                        ->content(fn (Forms\Get $get) => 'Rp '.number_format(InvoicePricing::total([
+                            'unit_price' => (float) ($get('unit_price') ?? 0),
+                            'quantity' => (float) ($get('quantity') ?? 0),
+                            'expedition_fee_amount' => (float) ($get('expedition_fee_amount') ?? 0),
+                        ]), 0, ',', '.'))
                         ->columnSpan(1),
 
                     Forms\Components\DatePicker::make('issue_date')
@@ -195,6 +200,61 @@ class InvoiceResource extends Resource
                         ->prefix('Rp')
                         ->minValue(0)
                         ->default(0)
+                        ->columnSpan(1),
+                ])->columns(2),
+
+            // Phase 19B / T19B-11 (D5): the transportir rate and the expedition
+            // fee are part of the bill, so they must be visible and editable.
+            // Until now only the mobile API could write these columns.
+            Forms\Components\Section::make('Transport & Expedition')
+                ->description('Delivery cost of this invoice. Edit only when the linked LO data is missing or wrong.')
+                ->schema([
+                    Forms\Components\Select::make('loading_order_number')
+                        ->label('Loading Order')
+                        ->placeholder('No LO linked')
+                        ->options(function (Forms\Get $get) use ($user) {
+                            $query = DeliveryOrder::query()->loadingOrders();
+
+                            if ($user && ! $user->canAccessAllBranches()) {
+                                $query->whereIn('destination_branch_id', $user->accessibleBranchIds() ?: [0]);
+                            }
+
+                            return $query
+                                ->when($get('branch_id'), fn ($q, $branchId) => $q->where('destination_branch_id', (int) $branchId))
+                                ->orderByDesc('order_date')
+                                ->limit(100)
+                                ->pluck('do_number', 'do_number');
+                        })
+                        ->searchable()
+                        ->helperText('Links the invoice to the shipment whose transportir rate and expedition cost are snapshotted.')
+                        ->columnSpan(1),
+
+                    Forms\Components\TextInput::make('transportir_rate_at_sale')
+                        ->label('Transportir Rate')
+                        ->prefix('Rp')
+                        ->numeric()
+                        ->minValue(0)
+                        ->live()
+                        ->helperText('Rate per cylinder at the sale date (DPP HPP stays Pertamina only).')
+                        ->columnSpan(1),
+
+                    Forms\Components\TextInput::make('expedition_cost_at_sale')
+                        ->label('Expedition Cost')
+                        ->prefix('Rp')
+                        ->numeric()
+                        ->minValue(0)
+                        ->live()
+                        ->helperText('Actual delivery fee paid to the transportir for this shipment.')
+                        ->columnSpan(1),
+
+                    Forms\Components\TextInput::make('expedition_fee_amount')
+                        ->label('Charged to Buyer')
+                        ->prefix('Rp')
+                        ->numeric()
+                        ->minValue(0)
+                        ->default(0)
+                        ->live()
+                        ->helperText('Added to the invoice total; may not exceed the expedition cost.')
                         ->columnSpan(1),
                 ])->columns(2),
 
@@ -257,6 +317,16 @@ class InvoiceResource extends Resource
                 Tables\Columns\TextColumn::make('total_amount')
                     ->label('Total')
                     ->formatStateUsing(fn ($state) => 'Rp '.number_format($state, 0, ',', '.')),
+
+                Tables\Columns\TextColumn::make('loading_order_number')
+                    ->label('LO')
+                    ->placeholder('—')
+                    ->toggleable(isToggledHiddenByDefault: true),
+
+                Tables\Columns\TextColumn::make('expedition_fee_amount')
+                    ->label('Fee to Buyer')
+                    ->formatStateUsing(fn ($state) => 'Rp '.number_format((float) $state, 0, ',', '.'))
+                    ->toggleable(isToggledHiddenByDefault: true),
 
                 Tables\Columns\TextColumn::make('paid_amount')
                     ->label('Paid')
@@ -322,11 +392,48 @@ class InvoiceResource extends Resource
                             ->required()
                             ->prefix('Rp')
                             ->minValue(1),
+
+                        Forms\Components\DatePicker::make('paid_on')
+                            ->label('Tanggal Bayar')
+                            ->default(today())
+                            ->required(),
+
+                        Forms\Components\Select::make('method')
+                            ->label('Metode Pembayaran')
+                            ->options(Payment::methods())
+                            ->default('cash')
+                            ->required(),
+
+                        Forms\Components\Select::make('cash_account_id')
+                            ->label('Masuk ke Kas/Bank')
+                            ->options(fn () => ChartOfAccount::cashAccounts()
+                                ->orderBy('code')
+                                ->get()
+                                ->mapWithKeys(fn (ChartOfAccount $account) => [
+                                    $account->id => $account->code.' — '.$account->name,
+                                ]))
+                            ->searchable(),
+
+                        Forms\Components\TextInput::make('reference_no')
+                            ->label('No. Referensi')
+                            ->maxLength(50),
                     ])
                     ->action(function (Invoice $record, array $data) {
-                        $record->paid_amount += (float) $data['payment_amount'];
-                        $record->save();
-                        $record->recalculateStatus();
+                        // Phase 19A / T19A-03: record a ledger row instead of
+                        // adding to paid_amount, so the payment date and method
+                        // survive for the Jurnal / Sales Detail reports.
+                        app(PaymentLedger::class)->recordInvoice($record, [
+                            'amount' => $data['payment_amount'],
+                            'paid_on' => $data['paid_on'] ?? null,
+                            'method' => $data['method'] ?? 'cash',
+                            'cash_account_id' => $data['cash_account_id'] ?? null,
+                            'reference_no' => $data['reference_no'] ?? null,
+                        ], auth()->id());
+
+                        Notification::make()
+                            ->title('Payment recorded')
+                            ->success()
+                            ->send();
                     })
                     ->requiresConfirmation(),
 

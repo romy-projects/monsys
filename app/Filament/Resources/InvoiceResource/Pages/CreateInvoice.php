@@ -3,13 +3,13 @@
 namespace App\Filament\Resources\InvoiceResource\Pages;
 
 use App\Filament\Resources\InvoiceResource;
+use App\Filament\Resources\Pages\CreateRecord;
 use App\Models\Branch;
 use App\Models\Customer;
 use App\Models\Invoice;
 use App\Services\DocumentNumberService;
 use App\Support\InvoicePricing;
 use App\Support\OutstandingReconciliations;
-use Filament\Resources\Pages\CreateRecord;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
 
@@ -32,7 +32,7 @@ class CreateInvoice extends CreateRecord
 
         $data['lpg_price_id'] = $price->id;
         $data['unit_price'] = $price->selling_price;
-        $data['total_amount'] = (int) ($data['quantity'] ?? 0) * (float) ($data['unit_price'] ?? 0);
+        $data['total_amount'] = InvoicePricing::total($data);
         $data['created_by'] = auth()->id();
 
         // Map polymorphic reference

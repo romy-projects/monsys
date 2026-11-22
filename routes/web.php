@@ -13,6 +13,8 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/export/sales',        [ExportController::class, 'sales'])->name('export.sales');
     Route::get('/export/pl',           [ExportController::class, 'profitLoss'])->name('export.pl');
     Route::get('/export/receivables',  [ExportController::class, 'receivables'])->name('export.receivables');
+    Route::get('/export/journal',      [ExportController::class, 'journal'])->name('export.journal');
+    Route::get('/export/sales-detail', [ExportController::class, 'salesDetail'])->name('export.sales_detail');
 
     Route::get('/admin/import-data/download/{file}', [ImportDownloadController::class, 'download'])
         ->name('import-data.download');

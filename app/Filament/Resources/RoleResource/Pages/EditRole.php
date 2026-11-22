@@ -2,10 +2,10 @@
 
 namespace App\Filament\Resources\RoleResource\Pages;
 
+use App\Filament\Resources\Pages\EditRecord;
 use App\Filament\Resources\RoleResource;
 use App\Services\AuditLogger;
 use Filament\Actions;
-use Filament\Resources\Pages\EditRecord;
 
 class EditRole extends EditRecord
 {

@@ -2,9 +2,9 @@
 
 namespace App\Filament\Resources\ReceivableResource\Pages;
 
+use App\Filament\Resources\Pages\EditRecord;
 use App\Filament\Resources\ReceivableResource;
 use Filament\Actions;
-use Filament\Resources\Pages\EditRecord;
 
 class EditReceivable extends EditRecord
 {
@@ -18,7 +18,7 @@ class EditReceivable extends EditRecord
                 ->icon('heroicon-o-list-bullet')
                 ->color('gray')
                 ->modalContent(fn () => view('filament.finance.payment-history', [
-                    'payments' => $this->getRecord()->payments()->with('createdBy')->orderByDesc('paid_on')->orderByDesc('id')->get(),
+                    'payments' => $this->getRecord()->payments()->with('payment.createdBy')->latestFirst()->get(),
                 ]))
                 ->modalSubmitAction(false)
                 ->modalCancelActionLabel('Tutup'),

@@ -3,9 +3,9 @@
 namespace App\Filament\Resources\DailySaleResource\Pages;
 
 use App\Filament\Resources\DailySaleResource;
+use App\Filament\Resources\Pages\CreateRecord;
 use App\Models\Customer;
 use App\Models\LpgPrice;
-use Filament\Resources\Pages\CreateRecord;
 
 class CreateDailySale extends CreateRecord
 {
